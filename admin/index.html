@@ -5,135 +5,65 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>サイト管理</title>
 
-    <!-- Netlify Identity ウィジェット（必須） -->
+    <!-- 1) まず CMS の設定を「グローバル変数」に内蔵（Decap が自動で拾います） -->
+    <script>
+      window.CMS_CONFIG = {
+        load_config_file: false,
+        config: {
+          backend: { name: 'git-gateway', branch: 'main' },
+          media_folder: 'assets/uploads',
+          public_folder: '/assets/uploads',
+          locale: 'ja',
+          publish_mode: 'editorial_workflow',
+          site_url: 'https://usmle-japan-blog.netlify.app',
+          display_url: 'https://usmle-japan-blog.netlify.app',
+          collections: [
+            {
+              name: 'posts',
+              label: '投稿',
+              label_singular: '投稿',
+              folder: 'posts',
+              create: true,
+              extension: 'md',
+              slug: '{{year}}{{month}}{{day}}-{{slug}}',
+              sort: 'date:desc',
+              preview_path: 'post_view.html?path=/posts/{{filename}}',
+              fields: [
+                { label: 'タイトル', name: 'title', widget: 'string', required: true },
+                { label: '日付', name: 'date', widget: 'datetime', format: 'YYYY-MM-DD', time_format: false, required: true },
+                { label: '抜粋（一覧に表示）', name: 'excerpt', widget: 'text', required: false },
+                { label: 'タグ', name: 'tags', widget: 'list', required: false },
+                { label: 'アイキャッチ画像', name: 'eyecatch', widget: 'image', required: false, allow_multiple: false },
+                { label: '下書き', name: 'draft', widget: 'boolean', default: false, required: false },
+                { label: '本文（Markdown）', name: 'body', widget: 'markdown', required: false }
+              ],
+            },
+          ],
+        }
+      };
+    </script>
+
+    <!-- 2) Netlify Identity（ログインUI用。イベントハンドラは付けません＝リロードしません） -->
     <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
 
-    <!-- Decap CMS 本体（CDN1/2どちらか落ちても片方で読む） -->
-    <script>window.CMS_MANUAL_INIT = true;</script>
+    <!-- 3) Decap CMS 本体（どちらか読めればOK） -->
     <script src="https://unpkg.com/decap-cms@^3/dist/decap-cms.js"></script>
     <script>
-      // 予備：unpkgがブロックされた時のフェイルオーバー
+      // 予備CDN（unpkgがブロックされた時の保険）
       setTimeout(() => {
         if (!window.CMS) {
           var s = document.createElement('script');
           s.src = 'https://cdn.jsdelivr.net/npm/decap-cms@3/dist/decap-cms.js';
           document.head.appendChild(s);
         }
-      }, 1200);
+      }, 1000);
     </script>
 
-    <!-- フロントCSS（プレビューにも適用） -->
+    <!-- プレビューにサイトのCSSを適用（なくてもOK） -->
     <link rel="stylesheet" href="/assets/styles.css" />
-    <style>
-      .admin-shell { max-width: 720px; margin: 24px auto; padding: 16px; }
-      .box { border:1px solid #ccc; border-radius:8px; padding:16px; margin:16px 0; }
-      .btn { display:inline-block; padding:10px 16px; border-radius:6px; border:0; background:#1e90ff; color:#fff; font-weight:600; }
-      .muted { color:#666; font-size: 14px; }
-      #debug { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
-    </style>
+    <style>body{margin:0}</style>
   </head>
   <body>
-    <div class="admin-shell">
-      <h1>管理画面</h1>
-      <div class="box" id="status">準備中…</div>
-      <div class="box">
-        <button class="btn" id="open-login">ログイン/サインアップを開く</button>
-        <p class="muted">招待メールのリンクでうまく行かない場合は、このボタンで手動ログインしてください。</p>
-      </div>
-      <details class="box">
-        <summary>デバッグ情報（必要時のみ）</summary>
-        <div id="debug"></div>
-      </details>
-    </div>
-
-    <script>
-      const statusBox = document.getElementById('status');
-      const debugBox = document.getElementById('debug');
-      const setStatus = (msg) => statusBox.textContent = msg;
-      const log = (m) => debugBox.textContent = (debugBox.textContent ? debugBox.textContent + "\n" : "") + m;
-
-      // ===== CMS 設定を内蔵（外部の config.yml は使用しない）=====
-      const INLINE_CONFIG = {
-        backend: { name: 'git-gateway', branch: 'main' },
-        media_folder: 'assets/uploads',
-        public_folder: '/assets/uploads',
-        locale: 'ja',
-        publish_mode: 'editorial_workflow',
-        site_url: 'https://usmle-japan-blog.netlify.app',
-        display_url: 'https://usmle-japan-blog.netlify.app',
-        collections: [
-          {
-            name: 'posts',
-            label: '投稿',
-            label_singular: '投稿',
-            folder: 'posts',
-            create: true,
-            extension: 'md',
-            slug: '{{year}}{{month}}{{day}}-{{slug}}',
-            sort: 'date:desc',
-            preview_path: 'post_view.html?path=/posts/{{filename}}',
-            fields: [
-              { label: 'タイトル', name: 'title', widget: 'string', required: true },
-              { label: '日付', name: 'date', widget: 'datetime', format: 'YYYY-MM-DD', time_format: false, required: true },
-              { label: '抜粋（一覧に表示）', name: 'excerpt', widget: 'text', required: false },
-              { label: 'タグ', name: 'tags', widget: 'list', required: false },
-              { label: 'アイキャッチ画像', name: 'eyecatch', widget: 'image', required: false, allow_multiple: false },
-              { label: '下書き', name: 'draft', widget: 'boolean', default: false, required: false },
-              { label: '本文（Markdown）', name: 'body', widget: 'markdown', required: false },
-            ],
-          },
-        ],
-      };
-
-      // ===== CMSを確実に初期化（CMSロード待ちをリトライ）=====
-      function startCMS(retry = 0) {
-        try {
-          if (!window.CMS || !CMS.init) {
-            if (retry < 20) { // 最大 ~10秒待つ（500ms*20）
-              setStatus('CMS読込待機中… ' + (retry+1));
-              return setTimeout(() => startCMS(retry + 1), 500);
-            } else {
-              setStatus('CMSが読み込めませんでした（ネットワーク/CSPを確認）。');
-              log('CMS not loaded after retries');
-              return;
-            }
-          }
-          CMS.registerPreviewStyle('/assets/styles.css');
-          CMS.init({ load_config_file: false, config: INLINE_CONFIG });
-          setStatus('CMSを起動しました。左側に「投稿」が表示されます。');
-          log('CMS.init() OK');
-        } catch (e) {
-          setStatus('CMS初期化エラー: ' + (e && e.message));
-          log('CMS ERROR: ' + (e && (e.stack || e.message)));
-        }
-      }
-      startCMS();
-
-      // ===== Identity（招待リンク/手動ログインの導線）=====
-      if (window.netlifyIdentity) {
-        const hash = window.location.hash || '';
-        netlifyIdentity.on('init', (user) => {
-          const hasToken = /invite_token=|confirmation_token=/.test(hash);
-          setStatus(user ? 'ログイン済みです。CMSの操作を開始できます。'
-                         : (hasToken ? '招待トークン検出 → サインアップUIを開きます…'
-                                     : '未ログインです。ボタンからログインできます。'));
-          if (!user && hasToken) netlifyIdentity.open('signup');
-          log('Identity init: ' + (user ? 'logged-in' : 'logged-out'));
-        });
-        netlifyIdentity.on('login',   () => { setStatus('ログイン完了。CMSを再読み込みします…'); log('Identity login');   window.location.replace('/admin/'); });
-        netlifyIdentity.on('signup',  () => { setStatus('サインアップ完了。CMSへ移動します…');     log('Identity signup');  window.location.replace('/admin/'); });
-        netlifyIdentity.on('logout',  () => { setStatus('ログアウトしました。再度ログインしてください。'); log('Identity logout'); });
-
-        document.getElementById('open-login').addEventListener('click', () => netlifyIdentity.open());
-        try { netlifyIdentity.init(); } catch (e) { log('Identity init error: ' + e.message); }
-      } else {
-        setStatus('Identity ウィジェットが読み込めません（CSP/ネットワークを確認）。');
-        log('Identity widget not found');
-      }
-
-      // 例外を画面に表示（運用後は削除可）
-      window.addEventListener('error', (e) => log('window.error: ' + e.message));
-      window.addEventListener('unhandledrejection', (e) => log('unhandledrejection: ' + (e.reason && e.reason.message)));
-    </script>
+    <noscript>JavaScript を有効にしてください。</noscript>
   </body>
 </html>
