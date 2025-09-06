@@ -1,1 +1,195 @@
+/*
+ * サイト全体のスタイル定義。
+ * モバイルファーストで、ダークモードとライトモードを
+ * prefers-color-scheme に応じて自動切替します。
+ */
+
+:root {
+  /* ライトモード用カラー変数 */
+  --bg-color: #ffffff;
+  --text-color: #333333;
+  --accent-color: #1e88e5;
+  --card-bg: #f9f9f9;
+  --card-border: #e0e0e0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* ダークモード用カラー変数 */
+    --bg-color: #121212;
+    --text-color: #e0e0e0;
+    --accent-color: #90caf9;
+    --card-bg: #1e1e1e;
+    --card-border: #333333;
+  }
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  line-height: 1.6;
+}
+
+header {
+  padding: 1rem;
+  text-align: center;
+  border-bottom: 1px solid var(--card-border);
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+main {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+/* 検索・フィルタセクション */
+.search-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+#searchInput {
+  padding: 0.5rem;
+  font-size: 1rem;
+  border: 1px solid var(--card-border);
+  border-radius: 4px;
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+#tagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tag-button {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--card-border);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text-color);
+  cursor: pointer;
+}
+.tag-button:hover {
+  background: var(--accent-color);
+  color: #ffffff;
+}
+
+/* 投稿カード */
+.post-card {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.post-card h2 {
+  margin-top: 0;
+  font-size: 1.4rem;
+}
+
+.post-card h2 a {
+  color: var(--accent-color);
+  text-decoration: none;
+}
+.post-card h2 a:hover {
+  text-decoration: underline;
+}
+
+.post-date {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--accent-color);
+  margin-bottom: 0.5rem;
+}
+
+.post-excerpt {
+  margin: 0.5rem 0;
+}
+
+.post-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.tag {
+  background: var(--accent-color);
+  color: #ffffff;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.tag:hover {
+  opacity: 0.8;
+}
+
+.post-eyecatch {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+/* ページネーション */
+nav#pagination {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+}
+nav#pagination button {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--card-border);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text-color);
+  cursor: pointer;
+}
+nav#pagination button:disabled {
+  background: var(--accent-color);
+  color: #ffffff;
+  cursor: default;
+}
+
+/* 記事本文 */
+.post-body {
+  margin-top: 1rem;
+}
+
+.post-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* コードブロックの簡易スタイル */
+pre, code {
+  font-family: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--card-bg);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+pre {
+  padding: 1rem;
+}
 
