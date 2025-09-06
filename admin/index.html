@@ -1,1 +1,31 @@
+<!--
+  管理画面のエントリポイントです。Decap CMS本体をCDNから読み込み、
+  config.yml（同ディレクトリ）を自動的に読み込みます。プレビュー用に
+  サイトのスタイルを登録し、初期化時にデバッグ用のログを出力します。
+-->
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>サイト管理</title>
+    <!-- Decap CMS本体。@^3は最新版のメジャーバージョン3系を使用します -->
+    <script>
+      // 手動初期化を指定し、設定ファイルの読み込み後に初期化します。
+      window.CMS_MANUAL_INIT = true;
+    </script>
+    <script src="https://unpkg.com/decap-cms@^3/dist/decap-cms.js"></script>
+    <!-- サイトのスタイルをプレビューにも反映させるため読み込みます -->
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <script>
+      // 管理画面側でもフロントエンドと同じスタイルを使用できるよう登録
+      CMS.registerPreviewStyle('/assets/styles.css');
+      // CMSを初期化
+      CMS.init();
+      console.log('Decap CMS initialized');
+    </script>
+  </body>
+</html>
 
