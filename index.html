@@ -5,56 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>USMLE情報ブログ</title>
     <link rel="stylesheet" href="/assets/styles.css" />
-    <!-- 軽量 Markdown パーサ。CDN から1つだけ読み込みます -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   </head>
   <body>
-    <header>
-      <h1>USMLE情報ブログ</h1>
-    </header>
+    <header><h1>USMLE情報ブログ</h1></header>
     <main>
       <section class="search-filter">
-        <input
-          type="text"
-          id="searchInput"
-          placeholder="キーワード検索"
-        />
+        <input type="text" id="searchInput" placeholder="キーワード検索" />
         <div id="tagList"></div>
       </section>
+      <div id="diag" style="padding:8px;border:1px solid #ccc;margin:8px;white-space:pre-wrap;"></div>
       <section id="postsContainer"></section>
       <nav id="pagination"></nav>
     </main>
     <script>
-      // ★ あなたのリポジトリ情報に修正済み
+      // あなたのリポジトリ
       const REPO_OWNER = 'Tomohiro0615';
       const REPO_NAME  = 'usmle-blog';
       const BRANCH = 'main';
 
-      // （以下は前と同じ処理）
       let allPosts = [];
       const postsPerPage = 10;
       let currentPage = 1;
+      const diag = document.getElementById('diag');
 
-      async function fetchPostsList() {
-        const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/posts?ref=${BRANCH}`;
-        const response = await fetch(apiUrl);
-        if (!response.ok) throw new Error('Failed to fetch posts list');
-        const files = await response.json();
-        const mdFiles = files.filter(
-          (f) => f.type === 'file' && f.name.endsWith('.md')
-        );
-        const posts = [];
-        for (const file of mdFiles) {
-          const contentRes = await fetch(file.download_url);
-          const rawContent = await contentRes.text();
-          const post = parseFrontMatter(rawContent);
-          post.path = `posts/${file.name}`;
-          posts.push(post);
+      // YAML簡易パーサ
+      function parseYAML(yaml) {
+        const lines = yaml.split('\n');
+        const obj = {};
+        for (const line of lines) {
+          const idx = line.indexOf(':');
+          if (idx > -1) {
+            const key = line.slice(0, idx).trim();
+            let value = line.slice(idx + 1).trim();
+            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+              value = value.slice(1, -1);
+            }
+            if (/^\d{4}-\d{2}-\d{2}/.test(value)) obj[key] = value;
+            else if (value === 'true' || value === 'false') obj[key] = value === 'true';
+            else if (value.startsWith('[') && value.endsWith(']')) {
+              obj[key] = value.slice(1, -1).split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+            } else obj[key] = value;
+          }
         }
-        posts.sort((a, b) => new Date(b.date) - new Date(a.date));
-        allPosts = posts;
-        initTags();
-        renderPosts();
+        return obj;
       }
 
       function parseFrontMatter(content) {
@@ -70,179 +64,37 @@
         return { ...metadata, body };
       }
 
-      function parseYAML(yaml) {
-        const lines = yaml.split('\n');
-        const obj = {};
-        for (const line of lines) {
-          const idx = line.indexOf(':');
-          if (idx > -1) {
-            const key = line.slice(0, idx).trim();
-            let value = line.slice(idx + 1).trim();
-            if (
-              (value.startsWith('"') && value.endsWith('"')) ||
-              (value.startsWith("'") && value.endsWith("'"))
-            ) {
-              value = value.slice(1, -1);
-            }
-            if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
-              obj[key] = value;
-            } else if (value === 'true' || value === 'false') {
-              obj[key] = value === 'true';
-            } else if (value.startsWith('[') && value.endsWith(']')) {
-              const list = value
-                .slice(1, -1)
-                .split(',')
-                .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
-                .filter(Boolean);
-              obj[key] = list;
-            } else {
-              obj[key] = value;
-            }
-          }
-        }
-        return obj;
+      async function githubListPosts() {
+        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/posts?ref=${BRANCH}`;
+        const r = await fetch(url);
+        const text = await r.text();
+        if (!r.ok) throw new Error(`List posts NG ${r.status}: ${text}`);
+        return JSON.parse(text).filter(f => f.type === 'file' && f.name.endsWith('.md'));
       }
 
-      function initTags() {
-        const tagSet = new Set();
-        allPosts.forEach((p) => {
-          if (p.draft === true) return;
-          if (Array.isArray(p.tags)) p.tags.forEach((t) => tagSet.add(t));
-          else if (p.tags) tagSet.add(p.tags);
-        });
-        const tagListDiv = document.getElementById('tagList');
-        tagListDiv.innerHTML = '';
-        tagSet.forEach((tag) => {
-          const btn = document.createElement('button');
-          btn.className = 'tag-button';
-          btn.textContent = tag;
-          btn.onclick = () => {
-            const url = new URL(window.location);
-            url.searchParams.set('tag', tag);
-            history.replaceState(null, '', url);
-            currentPage = 1;
-            renderPosts();
-          };
-          tagListDiv.appendChild(btn);
-        });
+      async function githubGetFileBase64(path) {
+        // path は "posts/xxx.md" を想定（先頭の "/" は取り除く）
+        path = path.replace(/^\/+/, '');
+        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}?ref=${BRANCH}`;
+        const r = await fetch(url);
+        const text = await r.text();
+        if (!r.ok) throw new Error(`Get file NG ${r.status}: ${text}`);
+        const data = JSON.parse(text);
+        // content は base64 + 改行あり
+        return atob((data.content || '').replace(/\n/g, ''));
       }
 
-      function renderPosts() {
-        const params = new URLSearchParams(window.location.search);
-        const searchTerm = document
-          .getElementById('searchInput')
-          .value.toLowerCase();
-        const tagFilter = params.get('tag');
-        let posts = allPosts.filter((p) => p.draft !== true);
-        if (tagFilter) {
-          posts = posts.filter((p) =>
-            Array.isArray(p.tags) ? p.tags.includes(tagFilter) : p.tags === tagFilter
-          );
-        }
-        if (searchTerm) {
-          posts = posts.filter((p) => {
-            const inTitle = p.title && p.title.toLowerCase().includes(searchTerm);
-            const inExcerpt =
-              p.excerpt && p.excerpt.toLowerCase().includes(searchTerm);
-            const inTags =
-              Array.isArray(p.tags) &&
-              p.tags.some((t) => t.toLowerCase().includes(searchTerm));
-            return inTitle || inExcerpt || inTags;
-          });
-        }
-        const totalPages = Math.ceil(posts.length / postsPerPage);
-        if (currentPage > totalPages) currentPage = 1;
-        const start = (currentPage - 1) * postsPerPage;
-        const end = start + postsPerPage;
-        const displayPosts = posts.slice(start, end);
-        const container = document.getElementById('postsContainer');
-        container.innerHTML = '';
-        displayPosts.forEach((post) => {
-          const card = document.createElement('article');
-          card.className = 'post-card';
-          if (post.eyecatch) {
-            const img = document.createElement('img');
-            img.className = 'post-eyecatch';
-            img.src = post.eyecatch.startsWith('http')
-              ? post.eyecatch
-              : `/assets/uploads/${post.eyecatch}`;
-            img.alt = post.title;
-            card.appendChild(img);
-          }
-          const title = document.createElement('h2');
-          const link = document.createElement('a');
-          link.href = `/post_view.html?path=${encodeURIComponent(post.path)}`;
-          link.textContent = post.title || '無題';
-          title.appendChild(link);
-          card.appendChild(title);
-          if (post.date) {
-            const dateElem = document.createElement('time');
-            dateElem.className = 'post-date';
-            dateElem.dateTime = post.date;
-            try {
-              dateElem.textContent = new Date(post.date).toLocaleDateString('ja-JP');
-            } catch (e) {
-              dateElem.textContent = post.date;
-            }
-            card.appendChild(dateElem);
-          }
-          if (post.excerpt) {
-            const excerpt = document.createElement('p');
-            excerpt.className = 'post-excerpt';
-            excerpt.textContent = post.excerpt;
-            card.appendChild(excerpt);
-          }
-          if (post.tags) {
-            const tagsDiv = document.createElement('div');
-            tagsDiv.className = 'post-tags';
-            const tags = Array.isArray(post.tags) ? post.tags : [post.tags];
-            tags.forEach((tag) => {
-              const span = document.createElement('span');
-              span.className = 'tag';
-              span.textContent = tag;
-              span.onclick = () => {
-                const url = new URL(window.location);
-                url.searchParams.set('tag', tag);
-                history.replaceState(null, '', url);
-                currentPage = 1;
-                renderPosts();
-              };
-              tagsDiv.appendChild(span);
-            });
-            card.appendChild(tagsDiv);
-          }
-          container.appendChild(card);
-        });
-        renderPagination(totalPages);
-      }
+      async function fetchPostsList() {
+        diag.textContent = '診断: posts一覧取得中...';
+        const files = await githubListPosts();
+        diag.textContent = `診断: posts一覧取得OK（${files.length}件）\n` + diag.textContent;
+        const posts = [];
+        for (const f of files) {
+          try {
+            const raw = await githubGetFileBase64(`posts/${f.name}`);
+            const post = parseFrontMatter(raw);
+            post.path = `posts/${f.name}`;
+            posts.push(post);
+          } catch (e) {
+            diag.textContent = `診断: ${f.name} の取得/解析でエラー: ${e.message}\n` + diag.te
 
-      function renderPagination(totalPages) {
-        const nav = document.getElementById('pagination');
-        nav.innerHTML = '';
-        if (totalPages <= 1) return;
-        for (let i = 1; i <= totalPages; i++) {
-          const btn = document.createElement('button');
-          btn.textContent = i;
-          btn.disabled = i === currentPage;
-          btn.onclick = () => {
-            currentPage = i;
-            renderPosts();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          };
-          nav.appendChild(btn);
-        }
-      }
-
-      document.getElementById('searchInput').addEventListener('input', () => {
-        currentPage = 1;
-        renderPosts();
-      });
-
-      fetchPostsList().catch((err) => {
-        document.getElementById('postsContainer').textContent =
-          '記事が読み込めませんでした。';
-        console.error(err);
-      });
-    </script>
-  </body>
-</html>
