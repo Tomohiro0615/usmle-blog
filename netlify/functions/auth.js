@@ -1,47 +1,57 @@
-// Netlify Functions: GitHub OAuth プロキシ（Decap/Netlify CMS 用）
-// 必要な環境変数：GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, SITE_URL
-const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
-
+// netlify/functions/auth.js
 exports.handler = async (event) => {
-  const url = new URL(event.rawUrl);
-  const path = url.pathname.replace(/\/\.netlify\/functions\/auth/, '') || '/';
-  const client_id = process.env.GITHUB_CLIENT_ID;
-  const client_secret = process.env.GITHUB_CLIENT_SECRET;
-  const site = process.env.SITE_URL || (url.protocol + '//' + url.host);
+  const host = event.headers["x-forwarded-host"] || event.headers.host || "";
+  const siteUrl = process.env.SITE_URL || `https://${host}`;
+  const path = event.path || "";
 
-  // 1) /login : GitHub の認可画面へリダイレクト
-  if (path === '/' || path === '/login') {
-    const redirect_uri = `${site}/.netlify/functions/auth/callback`;
-    const state = url.searchParams.get('state') || 'cms';
-    const scope = 'repo,user';
-    const authURL =
-      `https://github.com/login/oauth/authorize?client_id=${client_id}` +
-      `&redirect_uri=${encodeURIComponent(redirect_uri)}` +
-      `&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}`;
-    return {
-      statusCode: 302,
-      headers: { Location: authURL },
-    };
-  }
+  // 安全ヘッダ
+  const noStore = { "Cache-Control": "no-store" };
 
-  // 2) /callback : code を access_token に交換 → /admin に #access_token を付けて返す
-  if (path === '/callback') {
-    const code = url.searchParams.get('code');
-    const state = url.searchParams.get('state') || 'cms';
-    if (!code) return { statusCode: 400, body: 'Missing code' };
-
-    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ client_id, client_secret, code })
-    });
-    const data = await tokenRes.json();
-    if (!data.access_token) {
-      return { statusCode: 500, body: 'Token exchange failed: ' + JSON.stringify(data) };
+  // 1) /login → GitHubの認可画面へ302リダイレクト
+  if (path.endsWith("/login")) {
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    if (!clientId) {
+      return { statusCode: 500, headers: noStore, body: "Missing GITHUB_CLIENT_ID" };
     }
-    const redirectTo = `${site}/admin/#access_token=${data.access_token}&provider=github&state=${encodeURIComponent(state)}`;
-    return { statusCode: 302, headers: { Location: redirectTo } };
+    const state = Math.random().toString(36).slice(2);
+    const redirectUri = `${siteUrl}/.netlify/functions/auth/callback`;
+
+    const url = new URL("https://github.com/login/oauth/authorize");
+    url.searchParams.set("client_id", clientId);
+    url.searchParams.set("redirect_uri", redirectUri);
+    url.searchParams.set("scope", "read:user");
+    url.searchParams.set("state", state);
+
+    return { statusCode: 302, headers: { ...noStore, Location: url.toString() }, body: "" };
   }
 
-  return { statusCode: 404, body: 'Not Found' };
+  // 2) /callback → code をトークンに交換 → /admin/#access_token=... に戻す
+  if (path.endsWith("/callback")) {
+    const code = (event.queryStringParameters || {}).code;
+    if (!code) {
+      return { statusCode: 400, headers: noStore, body: "Missing code" };
+    }
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+    const redirectUri = `${siteUrl}/.netlify/functions/auth/callback`;
+
+    try {
+      const resp = await fetch("https://github.com/login/oauth/access_token", {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri })
+      });
+      const data = await resp.json();
+      if (!data.access_token) {
+        return { statusCode: 500, headers: noStore, body: `Token error: ${JSON.stringify(data)}` };
+      }
+      // トークンをフラグメントで返す（URL に残らない）
+      const back = `${siteUrl}/admin/#access_token=${data.access_token}`;
+      return { statusCode: 302, headers: { ...noStore, Location: back }, body: "" };
+    } catch (e) {
+      return { statusCode: 500, headers: noStore, body: `Fetch error: ${e}` };
+    }
+  }
+
+  return { statusCode: 404, headers: noStore, body: "Not Found" };
 };
