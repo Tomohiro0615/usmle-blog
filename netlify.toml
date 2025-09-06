@@ -1,7 +1,14 @@
+# netlify.toml
 [build]
-# 静的サイトなのでビルドコマンドなし
-publish = "."
+  functions = "netlify/functions"
 
-[functions]
-directory = "netlify/functions"
-node_bundler = "esbuild"
+# 任意: 覚えやすいショートURL
+[[redirects]]
+  from = "/oauth/start"
+  to = "/.netlify/functions/oauth-start"
+  status = 200
+
+[[redirects]]
+  from = "/oauth/callback"
+  to = "/.netlify/functions/oauth-callback"
+  status = 200
