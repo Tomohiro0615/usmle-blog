@@ -3,23 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>管理画面（ロード診断つき）</title>
+  <title>サイト管理（GitHub認証）</title>
   <link rel="stylesheet" href="/assets/styles.css" />
-  <style>
-    body{margin:0}
-    .wrap{max-width:760px;margin:24px auto;padding:16px}
-    .card{border:1px solid #ccc;border-radius:8px;padding:16px;margin:12px 0}
-    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
-    .ok{color:#0a7f00;font-weight:600}
-    .ng{color:#b00020;font-weight:600}
-  </style>
+  <style>body{margin:0}</style>
 
-  <!-- CMS設定（外部config.ymlは使わない） -->
+  <!-- CMS設定：backend を github に変更 -->
   <script>
     window.CMS_CONFIG = {
       load_config_file: false,
       config: {
-        backend: { name: 'git-gateway', branch: 'main' },
+        backend: {
+          name: 'github',
+          repo: 'Tomohiro0615/usmle-blog',
+          branch: 'main'
+          // Netlify上でホストしているので OAuth は Netlify が自動仲介（追加設定不要）
+        },
         media_folder: 'assets/uploads',
         public_folder: '/assets/uploads',
         locale: 'ja',
@@ -46,79 +44,26 @@
       }
     };
   </script>
-</head>
-<body>
-  <div class="wrap">
-    <h1>管理画面</h1>
-    <div class="card mono" id="log">起動中…</div>
-    <div class="card">状態: <span id="st">初期化</span></div>
-  </div>
+
+  <!-- Netlify CMS v2（安定版）だけ読み込み。Identity は不要 -->
+  <script src="https://unpkg.com/netlify-cms@2.10.192/dist/netlify-cms.js" crossorigin="anonymous"></script>
 
   <script>
-    const logEl = document.getElementById('log');
-    const stEl  = document.getElementById('st');
-    const log = (m, cls)=>{const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=m; logEl.appendChild(d);};
-    const setSt = (t)=> stEl.textContent=t;
-
-    function loadScript(src,label){
-      return new Promise((res,rej)=>{
-        const s=document.createElement('script');
-        s.src=src; s.crossOrigin='anonymous';
-        s.onload=()=>{ log(`LOAD OK: ${label}`,'ok'); res(); };
-        s.onerror=()=>{ log(`LOAD NG: ${label} (${src})`,'ng'); rej(new Error(label)); };
-        document.head.appendChild(s);
-      });
-    }
-
-    (async () => {
-      log('STEP1: 設定内蔵OK','ok');
-
-      // 1) Identity Widget を unpkg から読み込み → ダメなら公式にフォールバック
-      try{
-        setSt('Identity読込中（unpkg）…');
-        await loadScript('https://unpkg.com/netlify-identity-widget@1.10.1/build/netlify-identity-widget.js','Identity Widget (unpkg)');
-      }catch(e){
-        setSt('Identity読込中（official）…');
-        try{
-          await loadScript('https://identity.netlify.com/v1/netlify-identity-widget.js','Identity Widget (official)');
-        }catch(e2){
-          log('Identity が読めません（CSP/回線をご確認）','ng');
-        }
+    (function boot(){
+      function start(){
+        if (window.CMS && typeof window.CMS.init === 'function') {
+          window.CMS.registerPreviewStyle('/assets/styles.css');
+          window.CMS.init(window.CMS_CONFIG);
+        } else { setTimeout(start, 200); }
       }
-
-      // 2) Netlify CMS v2（安定版）
-      try{
-        setSt('CMS本体読込中（unpkg）…');
-        await loadScript('https://unpkg.com/netlify-cms@2.10.192/dist/netlify-cms.js','Netlify CMS v2 (unpkg)');
-      }catch(e){
-        setSt('CMS本体読込中（jsDelivr）…');
-        await loadScript('https://cdn.jsdelivr.net/npm/netlify-cms@2.10.192/dist/netlify-cms.js','Netlify CMS v2 (jsDelivr)');
-      }
-
-      // 3) 起動
-      setSt('CMS初期化中…');
-      let tries=0;
-      const t=setInterval(()=>{
-        tries++;
-        if(window.CMS && typeof window.CMS.init==='function'){
-          clearInterval(t);
-          try{
-            window.CMS.registerPreviewStyle('/assets/styles.css');
-            window.CMS.init(window.CMS_CONFIG);
-            setSt('CMS起動OK（左にUIが表示されます）');
-            log('STEP3: CMS.init() 実行','ok');
-          }catch(e){
-            setSt('CMS初期化エラー'); log('CMS.init エラー: '+(e.stack||e.message),'ng');
-          }
-        }else if(tries>20){
-          clearInterval(t);
-          setSt('CMSが見つかりません'); log('window.CMS 未検出','ng');
-        }
-      },400);
+      start();
     })();
-
-    window.addEventListener('error', (e)=> log('window.error: '+e.message,'ng'));
-    window.addEventListener('unhandledrejection', (e)=> log('unhandledrejection: '+(e.reason&&e.reason.message),'ng'));
   </script>
+</head>
+<body>
+  <header class="container"><h1>管理画面</h1></header>
+  <main class="container" style="border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px;">
+    右上に <b>Login with GitHub</b> が出たらタップして承認してください。承認後、左に「投稿」が表示されます。
+  </main>
 </body>
 </html>
