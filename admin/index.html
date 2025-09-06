@@ -14,7 +14,7 @@
     .ng{color:#b00020;font-weight:600}
   </style>
 
-  <!-- CMS 設定はページ内に内蔵（外部 config.yml は使わない） -->
+  <!-- CMS設定（外部config.ymlは使わない） -->
   <script>
     window.CMS_CONFIG = {
       load_config_file: false,
@@ -52,10 +52,6 @@
     <h1>管理画面</h1>
     <div class="card mono" id="log">起動中…</div>
     <div class="card">状態: <span id="st">初期化</span></div>
-    <div class="card">
-      ログインが出ない場合は Netlify の <b>Identity → Git Gateway</b> が <b>Enabled</b> か確認し、
-      招待メールのリンクを <b>Safari（通常タブ）</b>で開いた後にこのページを再読込してください。
-    </div>
   </div>
 
   <script>
@@ -77,48 +73,50 @@
     (async () => {
       log('STEP1: 設定内蔵OK','ok');
 
-      // Identity（ログインUI用）※失敗しても続行
-      try {
-        setSt('Identity読込中…');
-        await loadScript('https://identity.netlify.com/v1/netlify-identity-widget.js','Identity Widget');
-      } catch(e) {
-        log('Identityは読めませんでした（あとでUIが出ない場合はCSPを確認）','ng');
+      // 1) Identity Widget を unpkg から読み込み → ダメなら公式にフォールバック
+      try{
+        setSt('Identity読込中（unpkg）…');
+        await loadScript('https://unpkg.com/netlify-identity-widget@1.10.1/build/netlify-identity-widget.js','Identity Widget (unpkg)');
+      }catch(e){
+        setSt('Identity読込中（official）…');
+        try{
+          await loadScript('https://identity.netlify.com/v1/netlify-identity-widget.js','Identity Widget (official)');
+        }catch(e2){
+          log('Identity が読めません（CSP/回線をご確認）','ng');
+        }
       }
 
-      // Netlify CMS v2（安定版）を読み込み → 失敗なら jsDelivr にフォールバック
-      try {
+      // 2) Netlify CMS v2（安定版）
+      try{
         setSt('CMS本体読込中（unpkg）…');
         await loadScript('https://unpkg.com/netlify-cms@2.10.192/dist/netlify-cms.js','Netlify CMS v2 (unpkg)');
-      } catch(e) {
+      }catch(e){
         setSt('CMS本体読込中（jsDelivr）…');
         await loadScript('https://cdn.jsdelivr.net/npm/netlify-cms@2.10.192/dist/netlify-cms.js','Netlify CMS v2 (jsDelivr)');
       }
 
-      // 読み込み結果の確認
+      // 3) 起動
       setSt('CMS初期化中…');
-      let tries = 0;
-      const timer = setInterval(()=>{
+      let tries=0;
+      const t=setInterval(()=>{
         tries++;
-        if (window.CMS && typeof window.CMS.init === 'function') {
-          clearInterval(timer);
-          try {
+        if(window.CMS && typeof window.CMS.init==='function'){
+          clearInterval(t);
+          try{
             window.CMS.registerPreviewStyle('/assets/styles.css');
             window.CMS.init(window.CMS_CONFIG);
             setSt('CMS起動OK（左にUIが表示されます）');
             log('STEP3: CMS.init() 実行','ok');
-          } catch(e) {
-            setSt('CMS初期化エラー');
-            log('CMS.init エラー: '+(e.stack||e.message),'ng');
+          }catch(e){
+            setSt('CMS初期化エラー'); log('CMS.init エラー: '+(e.stack||e.message),'ng');
           }
-        } else if (tries>20) {
-          clearInterval(timer);
-          setSt('CMSが見つかりません（CSP/通信を確認）');
-          log('window.CMS 未検出（タイムアウト）','ng');
+        }else if(tries>20){
+          clearInterval(t);
+          setSt('CMSが見つかりません'); log('window.CMS 未検出','ng');
         }
-      }, 400);
+      },400);
     })();
 
-    // 例外を可視化
     window.addEventListener('error', (e)=> log('window.error: '+e.message,'ng'));
     window.addEventListener('unhandledrejection', (e)=> log('unhandledrejection: '+(e.reason&&e.reason.message),'ng'));
   </script>
