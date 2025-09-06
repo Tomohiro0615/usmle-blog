@@ -5,45 +5,79 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>サイト管理</title>
 
-    <!-- Netlify Identity ウィジェット（招待リンク処理・ログイン用） -->
+    <!-- Netlify Identity ウィジェット -->
     <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
 
     <!-- Decap CMS 本体 -->
-    <script>
-      window.CMS_MANUAL_INIT = true;
-    </script>
+    <script>window.CMS_MANUAL_INIT = true;</script>
     <script src="https://unpkg.com/decap-cms@^3/dist/decap-cms.js"></script>
 
     <!-- プレビューにフロントのCSSを反映 -->
     <link rel="stylesheet" href="/assets/styles.css" />
+    <style>
+      /* 簡単なUI */
+      .admin-shell { max-width: 720px; margin: 24px auto; padding: 16px; }
+      .box { border:1px solid #ccc; border-radius:8px; padding:16px; margin:16px 0; }
+      .btn { display:inline-block; padding:10px 16px; border-radius:6px; border:0; background:#1e90ff; color:#fff; font-weight:600; }
+    </style>
   </head>
   <body>
+    <div class="admin-shell">
+      <h1>管理画面</h1>
+      <div class="box" id="status">読み込み中…</div>
+      <div class="box">
+        <button class="btn" id="open-login">ログイン/サインアップを開く</button>
+        <p style="margin-top:8px">招待メールのリンクでうまく行かない場合は、このボタンで手動ログインしてください。</p>
+      </div>
+    </div>
+
     <script>
-      // Decap CMS 初期化
+      // Decap CMS 初期化（先にやってOK）
       CMS.registerPreviewStyle('/assets/styles.css');
       CMS.init();
       console.log('Decap CMS initialized');
 
-      // --- Netlify Identity の初期化とハンドラ ---
+      const statusBox = document.getElementById('status');
+      function setStatus(msg){ statusBox.textContent = msg; }
+
+      // Identity 初期化＆イベント
       if (window.netlifyIdentity) {
-        // 初期化後、未ログインならログインUIを出す（必要時）
+        const hash = window.location.hash || '';
+        setStatus('Netlify Identity 初期化中…');
+
         netlifyIdentity.on('init', (user) => {
-          console.log('Identity init:', user ? 'logged in' : 'logged out');
+          const hasToken = /invite_token=|confirmation_token=/.test(hash);
+          setStatus(user ? 'ログイン済みです。CMSの操作を開始できます。' :
+                           (hasToken ? '招待トークンを検出。サインアップUIを開きます…' :
+                                       '未ログインです。ボタンからログインできます。'));
+          if (!user && hasToken) {
+            netlifyIdentity.open('signup');
+          }
         });
 
-        // 招待メールのリンクを踏んだ直後など、signup完了で自動遷移
         netlifyIdentity.on('login', () => {
-          console.log('Identity login');
-          // 同じ /admin/ にリロードして CMS を使い始める
-          window.location.reload();
+          setStatus('ログイン完了。CMSを再読み込みします…');
+          // 同じ場所にリロードしてCMSセッションを確立
+          window.location.replace('/admin/');
+        });
+
+        netlifyIdentity.on('signup', () => {
+          setStatus('サインアップ完了。CMSへ移動します…');
+          window.location.replace('/admin/');
         });
 
         netlifyIdentity.on('logout', () => {
-          console.log('Identity logout');
+          setStatus('ログアウトしました。再度ログインしてください。');
         });
 
-        // /admin に直接来た場合で未ログイン → UIを出したい時はこれを有効化
-        // netlifyIdentity.open(); // 必要ならコメント解除
+        document.getElementById('open-login').addEventListener('click', () => {
+          netlifyIdentity.open(); // 任意で login/signup 選択
+        });
+
+        // Identityを明示的に初期化
+        netlifyIdentity.init();
+      } else {
+        setStatus('Identity ウィジェットが読み込めませんでした（CSPやネットワークを確認）。');
       }
     </script>
   </body>
