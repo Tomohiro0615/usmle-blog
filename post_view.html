@@ -5,20 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>記事詳細</title>
     <link rel="stylesheet" href="/assets/styles.css" />
-    <!-- Markdown パーサ（index と同じものを利用）-->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   </head>
   <body>
     <main id="postContainer"></main>
     <script>
-      // GitHub リポジトリ設定（index.html と同じ値にしてください）
+      // ★ あなたのリポジトリ情報に修正済み
       const REPO_OWNER = 'Tomohiro0615';
-      const REPO_NAME = 'usmle-blog';
+      const REPO_NAME  = 'usmle-blog';
       const BRANCH = 'main';
 
-      /**
-       * YAML の簡易パーサ。同一コードを index.html からコピー
-       */
+      // （以下は以前と同じフロントマター処理と描画処理）
       function parseYAML(yaml) {
         const lines = yaml.split('\n');
         const obj = {};
@@ -52,9 +49,6 @@
         return obj;
       }
 
-      /**
-       * フロントマターと本文を分割します。
-       */
       function parseFrontMatter(content) {
         const fmRegex = /^---\n([\s\S]*?)\n---\n?/;
         const match = content.match(fmRegex);
@@ -68,9 +62,6 @@
         return { ...metadata, body };
       }
 
-      /**
-       * メタタグを動的に更新します。OGP/Twitterカードに対応。
-       */
       function updateMetaTags(post) {
         const description = post.excerpt || '';
         const eyecatchUrl = post.eyecatch
@@ -103,9 +94,6 @@
         meta.setAttribute('content', content);
       }
 
-      /**
-       * URL パラメータから path を取得して記事を読み込みます。
-       */
       async function loadPost() {
         const params = new URLSearchParams(window.location.search);
         const path = params.get('path');
@@ -121,11 +109,9 @@
           return;
         }
         const data = await res.json();
-        // Base64 データをデコードする。API は改行を含むので除去
         const decoded = atob(data.content.replace(/\n/g, ''));
         const post = parseFrontMatter(decoded);
         container.innerHTML = '';
-        // タイトル
         if (post.title) {
           document.title = post.title;
         }
@@ -145,7 +131,6 @@
           header.appendChild(timeElem);
         }
         container.appendChild(header);
-        // アイキャッチ
         if (post.eyecatch) {
           const img = document.createElement('img');
           img.className = 'post-eyecatch';
@@ -155,7 +140,6 @@
           img.alt = post.title || '';
           container.appendChild(img);
         }
-        // タグ
         if (post.tags) {
           const tagsDiv = document.createElement('div');
           tagsDiv.className = 'post-tags';
@@ -171,7 +155,6 @@
           });
           container.appendChild(tagsDiv);
         }
-        // 本文
         const article = document.createElement('article');
         article.className = 'post-body';
         article.innerHTML = marked.parse(post.body || '');
@@ -186,4 +169,3 @@
     </script>
   </body>
 </html>
-
