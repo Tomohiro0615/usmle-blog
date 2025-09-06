@@ -32,7 +32,7 @@
     };
     const setStatus = (t) => stEl.textContent = t;
 
-    // 1) CMS 設定をグローバルに（外部config不使用）
+    // 1) CMS 設定（外部configは使わない）
     window.CMS_CONFIG = {
       load_config_file: false,
       config: {
@@ -64,7 +64,7 @@
     };
     log('STEP1: CMS_CONFIG 設定OK', 'ok');
 
-    // 2) スクリプトを順次読み込み＆結果を表示
+    // 2) スクリプトを順次読み込み
     function loadScript(src, label){
       return new Promise((resolve,reject)=>{
         const s=document.createElement('script');
@@ -75,10 +75,39 @@
       });
     }
 
+    // 3) グローバルからCMS候補を検出して window.CMS に束ねる
+    function adoptCMSGlobal(){
+      if (window.CMS && typeof window.CMS.init === 'function') return true;
+      const candidates = [
+        'CMS','DecapCms','DecapCMS','decapCms','NetlifyCms','NetlifyCMS','netlifyCms','NetlifyCmsApp'
+      ];
+      for (const key of candidates) {
+        const v = window[key];
+        if (v && typeof v.init === 'function') {
+          window.CMS = v;
+          log(`ADOPT: window.${key} を window.CMS に採用`, 'ok');
+          return true;
+        }
+      }
+      // ワイルドカード探索（"cms" を含むキーをスキャン）
+      for (const key of Object.keys(window)) {
+        if (/cms/i.test(key)) {
+          const v = window[key];
+          if (v && typeof v.init === 'function') {
+            window.CMS = v;
+            log(`ADOPT-WILD: window.${key} を window.CMS に採用`, 'ok');
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
     (async () => {
       try {
         setStatus('Identity読込中…');
         await loadScript('https://identity.netlify.com/v1/netlify-identity-widget.js', 'Identity Widget');
+
         setStatus('CMS本体読込中(unpkg)…');
         await loadScript('https://unpkg.com/decap-cms@^3/dist/decap-cms.js', 'Decap CMS (unpkg)');
       } catch(e) {
@@ -93,12 +122,12 @@
         }
       }
 
-      // 3) CMS がロードされたか確認して起動
+      // 4) CMS 初期化（検出→init）
       setStatus('CMS初期化中…');
       let tries = 0;
       const timer = setInterval(()=>{
         tries++;
-        if (window.CMS && CMS.init) {
+        if (adoptCMSGlobal()) {
           clearInterval(timer);
           try{
             CMS.init(window.CMS_CONFIG);
@@ -110,11 +139,15 @@
           }
         } else if (tries > 20) {
           clearInterval(timer);
-          setStatus('CMSが見つかりません（CSP/通信を確認）');
+          setStatus('CMSが見つかりません（CSP/通信/ビルド差異を確認）');
           log('CMSオブジェクト未検出（タイムアウト）', 'ng');
         }
       }, 500);
     })();
+
+    // エラーを画面に表示（運用後は削除可）
+    window.addEventListener('error', (e) => log('window.error: ' + e.message, 'ng'));
+    window.addEventListener('unhandledrejection', (e) => log('unhandledrejection: ' + (e.reason && e.reason.message), 'ng'));
   </script>
 </body>
 </html>
