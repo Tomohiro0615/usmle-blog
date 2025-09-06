@@ -12,52 +12,52 @@
     <script>window.CMS_MANUAL_INIT = true;</script>
     <script src="https://unpkg.com/decap-cms@^3/dist/decap-cms.js"></script>
 
-    <!-- プレビューにフロントのCSSを反映 -->
+    <!-- 管理画面の簡易UIとフロントCSS -->
     <link rel="stylesheet" href="/assets/styles.css" />
     <style>
-      /* 簡単なUI */
       .admin-shell { max-width: 720px; margin: 24px auto; padding: 16px; }
       .box { border:1px solid #ccc; border-radius:8px; padding:16px; margin:16px 0; }
       .btn { display:inline-block; padding:10px 16px; border-radius:6px; border:0; background:#1e90ff; color:#fff; font-weight:600; }
+      .muted { color:#666; font-size: 14px; }
     </style>
   </head>
   <body>
     <div class="admin-shell">
       <h1>管理画面</h1>
-      <div class="box" id="status">読み込み中…</div>
+      <div class="box" id="status">準備中…</div>
       <div class="box">
         <button class="btn" id="open-login">ログイン/サインアップを開く</button>
-        <p style="margin-top:8px">招待メールのリンクでうまく行かない場合は、このボタンで手動ログインしてください。</p>
+        <p class="muted">招待メールのリンクでうまく行かない場合は、このボタンで手動ログインしてください。</p>
       </div>
     </div>
 
     <script>
-      // Decap CMS 初期化（先にやってOK）
-      CMS.registerPreviewStyle('/assets/styles.css');
-      CMS.init();
-      console.log('Decap CMS initialized');
-
       const statusBox = document.getElementById('status');
-      function setStatus(msg){ statusBox.textContent = msg; }
+      const setStatus = (msg) => { statusBox.textContent = msg; };
 
-      // Identity 初期化＆イベント
+      // 1) Decap CMS 初期化（config のパスを明示！）
+      try {
+        CMS.registerPreviewStyle('/assets/styles.css');
+        CMS.init({ config_path: '/admin/config.yml' });
+        setStatus('CMSの設定を読み込み中…（/admin/config.yml）');
+      } catch (e) {
+        setStatus('CMS初期化エラー: ' + (e && e.message));
+      }
+
+      // 2) Identity 初期化とイベント
       if (window.netlifyIdentity) {
         const hash = window.location.hash || '';
-        setStatus('Netlify Identity 初期化中…');
 
         netlifyIdentity.on('init', (user) => {
           const hasToken = /invite_token=|confirmation_token=/.test(hash);
-          setStatus(user ? 'ログイン済みです。CMSの操作を開始できます。' :
-                           (hasToken ? '招待トークンを検出。サインアップUIを開きます…' :
-                                       '未ログインです。ボタンからログインできます。'));
-          if (!user && hasToken) {
-            netlifyIdentity.open('signup');
-          }
+          setStatus(user ? 'ログイン済みです。CMSの操作を開始できます。'
+                         : (hasToken ? '招待トークン検出 → サインアップUIを開きます…'
+                                     : '未ログインです。ボタンからログインできます。'));
+          if (!user && hasToken) netlifyIdentity.open('signup');
         });
 
         netlifyIdentity.on('login', () => {
           setStatus('ログイン完了。CMSを再読み込みします…');
-          // 同じ場所にリロードしてCMSセッションを確立
           window.location.replace('/admin/');
         });
 
@@ -71,13 +71,12 @@
         });
 
         document.getElementById('open-login').addEventListener('click', () => {
-          netlifyIdentity.open(); // 任意で login/signup 選択
+          netlifyIdentity.open();
         });
 
-        // Identityを明示的に初期化
         netlifyIdentity.init();
       } else {
-        setStatus('Identity ウィジェットが読み込めませんでした（CSPやネットワークを確認）。');
+        setStatus('Identity ウィジェットが読み込めません（CSP/ネットワークを確認）。');
       }
     </script>
   </body>
