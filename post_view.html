@@ -9,13 +9,13 @@
   </head>
   <body>
     <main id="postContainer"></main>
+    <div id="diag" style="padding:8px;border:1px solid #ccc;margin:8px;white-space:pre-wrap;"></div>
     <script>
-      // ★ あなたのリポジトリ情報に修正済み
       const REPO_OWNER = 'Tomohiro0615';
       const REPO_NAME  = 'usmle-blog';
       const BRANCH = 'main';
+      const diag = document.getElementById('diag');
 
-      // （以下は以前と同じフロントマター処理と描画処理）
       function parseYAML(yaml) {
         const lines = yaml.split('\n');
         const obj = {};
@@ -24,26 +24,14 @@
           if (idx > -1) {
             const key = line.slice(0, idx).trim();
             let value = line.slice(idx + 1).trim();
-            if (
-              (value.startsWith('"') && value.endsWith('"')) ||
-              (value.startsWith("'") && value.endsWith("'"))
-            ) {
+            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
               value = value.slice(1, -1);
             }
-            if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
-              obj[key] = value;
-            } else if (value === 'true' || value === 'false') {
-              obj[key] = value === 'true';
-            } else if (value.startsWith('[') && value.endsWith(']')) {
-              const list = value
-                .slice(1, -1)
-                .split(',')
-                .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
-                .filter(Boolean);
-              obj[key] = list;
-            } else {
-              obj[key] = value;
-            }
+            if (/^\d{4}-\d{2}-\d{2}/.test(value)) obj[key] = value;
+            else if (value === 'true' || value === 'false') obj[key] = value === 'true';
+            else if (value.startsWith('[') && value.endsWith(']')) {
+              obj[key] = value.slice(1, -1).split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+            } else obj[key] = value;
           }
         }
         return obj;
@@ -62,12 +50,21 @@
         return { ...metadata, body };
       }
 
+      function setMeta(name, content) {
+        let meta = document.querySelector(`meta[name="${name}"],meta[property="${name}"]`);
+        if (!meta) {
+          meta = document.createElement('meta');
+          if (name.startsWith('og:')) meta.setAttribute('property', name);
+          else meta.setAttribute('name', name);
+          document.head.appendChild(meta);
+        }
+        meta.setAttribute('content', content);
+      }
+
       function updateMetaTags(post) {
         const description = post.excerpt || '';
         const eyecatchUrl = post.eyecatch
-          ? post.eyecatch.startsWith('http')
-            ? post.eyecatch
-            : `${window.location.origin}/assets/uploads/${post.eyecatch}`
+          ? (post.eyecatch.startsWith('http') ? post.eyecatch : `${window.location.origin}/assets/uploads/${post.eyecatch}`)
           : '';
         setMeta('description', description);
         setMeta('og:title', post.title || '');
@@ -81,91 +78,83 @@
         }
       }
 
-      function setMeta(name, content) {
-        let meta = document.querySelector(
-          `meta[name="${name}"],meta[property="${name}"]`
-        );
-        if (!meta) {
-          meta = document.createElement('meta');
-          if (name.startsWith('og:')) meta.setAttribute('property', name);
-          else meta.setAttribute('name', name);
-          document.head.appendChild(meta);
-        }
-        meta.setAttribute('content', content);
+      async function githubGetFileBase64(path) {
+        path = path.replace(/^\/+/, ''); // 先頭の / を除去（/posts/... → posts/...）
+        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}?ref=${BRANCH}`;
+        const r = await fetch(url);
+        const text = await r.text();
+        if (!r.ok) throw new Error(`Get file NG ${r.status}: ${text}`);
+        const data = JSON.parse(text);
+        return atob((data.content || '').replace(/\n/g, ''));
       }
 
       async function loadPost() {
         const params = new URLSearchParams(window.location.search);
-        const path = params.get('path');
+        let path = params.get('path');
         const container = document.getElementById('postContainer');
         if (!path) {
           container.textContent = '記事パスが指定されていません。';
           return;
         }
-        const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}?ref=${BRANCH}`;
-        const res = await fetch(apiUrl);
-        if (!res.ok) {
-          container.textContent = '記事を取得できませんでした。';
-          return;
-        }
-        const data = await res.json();
-        const decoded = atob(data.content.replace(/\n/g, ''));
-        const post = parseFrontMatter(decoded);
-        container.innerHTML = '';
-        if (post.title) {
-          document.title = post.title;
-        }
-        updateMetaTags(post);
-        const header = document.createElement('header');
-        const h1 = document.createElement('h1');
-        h1.textContent = post.title || '';
-        header.appendChild(h1);
-        if (post.date) {
-          const timeElem = document.createElement('time');
-          timeElem.dateTime = post.date;
-          try {
-            timeElem.textContent = new Date(post.date).toLocaleDateString('ja-JP');
-          } catch (e) {
-            timeElem.textContent = post.date;
+        try {
+          diag.textContent = `診断: 取得開始 path=${path}`;
+          const raw = await githubGetFileBase64(path);
+          const post = parseFrontMatter(raw);
+          container.innerHTML = '';
+          if (post.title) document.title = post.title;
+          updateMetaTags(post);
+
+          const header = document.createElement('header');
+          const h1 = document.createElement('h1');
+          h1.textContent = post.title || '';
+          header.appendChild(h1);
+
+          if (post.date) {
+            const timeElem = document.createElement('time');
+            timeElem.dateTime = post.date;
+            try { timeElem.textContent = new Date(post.date).toLocaleDateString('ja-JP'); }
+            catch { timeElem.textContent = post.date; }
+            header.appendChild(timeElem);
           }
-          header.appendChild(timeElem);
+          container.appendChild(header);
+
+          if (post.eyecatch) {
+            const img = document.createElement('img');
+            img.className = 'post-eyecatch';
+            img.src = post.eyecatch.startsWith('http') ? post.eyecatch : `/assets/uploads/${post.eyecatch}`;
+            img.alt = post.title || '';
+            container.appendChild(img);
+          }
+
+          if (post.tags) {
+            const tagsDiv = document.createElement('div');
+            tagsDiv.className = 'post-tags';
+            const tags = Array.isArray(post.tags) ? post.tags : [post.tags];
+            tags.forEach(tag => {
+              const span = document.createElement('span');
+              span.className = 'tag';
+              span.textContent = tag;
+              span.onclick = () => {
+                window.location.href = `/index.html?tag=${encodeURIComponent(tag)}`;
+              };
+              tagsDiv.appendChild(span);
+            });
+            container.appendChild(tagsDiv);
+          }
+
+          const article = document.createElement('article');
+          article.className = 'post-body';
+          article.innerHTML = marked.parse(post.body || '');
+          container.appendChild(article);
+
+          diag.textContent = `診断: 取得/描画OK`;
+        } catch (e) {
+          diag.textContent = `診断: 失敗 ${e.message}`;
+          container.textContent = '記事を取得できませんでした。';
         }
-        container.appendChild(header);
-        if (post.eyecatch) {
-          const img = document.createElement('img');
-          img.className = 'post-eyecatch';
-          img.src = post.eyecatch.startsWith('http')
-            ? post.eyecatch
-            : `/assets/uploads/${post.eyecatch}`;
-          img.alt = post.title || '';
-          container.appendChild(img);
-        }
-        if (post.tags) {
-          const tagsDiv = document.createElement('div');
-          tagsDiv.className = 'post-tags';
-          const tags = Array.isArray(post.tags) ? post.tags : [post.tags];
-          tags.forEach((tag) => {
-            const span = document.createElement('span');
-            span.className = 'tag';
-            span.textContent = tag;
-            span.onclick = () => {
-              window.location.href = `/index.html?tag=${encodeURIComponent(tag)}`;
-            };
-            tagsDiv.appendChild(span);
-          });
-          container.appendChild(tagsDiv);
-        }
-        const article = document.createElement('article');
-        article.className = 'post-body';
-        article.innerHTML = marked.parse(post.body || '');
-        container.appendChild(article);
       }
 
-      loadPost().catch((err) => {
-        document.getElementById('postContainer').textContent =
-          '読み込み中にエラーが発生しました。';
-        console.error(err);
-      });
+      loadPost();
     </script>
   </body>
 </html>
