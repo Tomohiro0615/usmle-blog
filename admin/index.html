@@ -5,11 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>サイト管理（GitHubでログイン）</title>
   <link rel="stylesheet" href="/assets/styles.css" />
-  <style>body{margin:0}.wrap{max-width:760px;margin:24px auto;padding:16px}.note{border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px 0;font-size:14px}</style>
+  <style>body{margin:0}.wrap{max-width:760px;margin:24px auto;padding:16px}.note{border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px 0;font-size:14px}.btn{display:inline-block;padding:10px 14px;border-radius:6px;background:#0b63ce;color:#fff;text-decoration:none;border:1px solid #0b63ce}</style>
 
-  <!-- CMS設定：GitHubバックエンド。Netlifyホスティングの場合は base_url と auth_endpoint を指定すると
-       Netlify の OAuth プロキシを自動利用できます（Identity不要）。 -->
   <script>
+    // Netlify CMS 設定（GitHubバックエンド／Netlify OAuth）
     window.CMS_CONFIG = {
       load_config_file: false,
       config: {
@@ -47,18 +46,23 @@
     };
   </script>
 
-  <!-- Netlify CMS 本体（安定版） -->
+  <!-- CMS 本体（安定版） -->
   <script src="https://unpkg.com/netlify-cms@2.10.192/dist/netlify-cms.js" crossorigin="anonymous"></script>
 
   <script>
-    (function boot(){
-      function start(){
+    // ← あなたのSite IDを埋め込み済み
+    const SITE_ID = '338b0603-bdd3-4ba8-ada0-6ab18a189353';
+    const oauthURL = `https://api.netlify.com/auth?provider=github&site_id=${SITE_ID}`;
+
+    // CMS 起動
+    (function start(){
+      function boot(){
         if (window.CMS && typeof window.CMS.init === 'function') {
           window.CMS.registerPreviewStyle('/assets/styles.css');
           window.CMS.init(window.CMS_CONFIG);
-        } else { setTimeout(start, 200); }
+        } else { setTimeout(boot, 200); }
       }
-      start();
+      boot();
     })();
   </script>
 </head>
@@ -66,9 +70,19 @@
   <div class="wrap">
     <h1>管理画面</h1>
     <div class="note">
-      このページを開くと、右上に <b>Login with GitHub</b> が表示されます。タップして GitHub 連携を承認してください。<br>
-      承認後、左側に「投稿」が表示され、新規作成→公開ができます。
+      1) 下の青ボタンから <b>GitHubでログイン</b> を開いて承認してください。<br>
+      2) 承認後にこのページへ戻ると、左に「投稿」が表示されます。
     </div>
+    <p><a class="btn" id="ghLogin" href="#">GitHubでログイン</a></p>
+    <div class="note" style="font-size:13px;opacity:.85">出ない/止まる場合はPCのChromeでも試してください。</div>
   </div>
+
+  <script>
+    document.getElementById('ghLogin').addEventListener('click', function(e){
+      e.preventDefault();
+      const redirect = encodeURIComponent(window.location.href);
+      window.location.href = `${oauthURL}&response_type=token&redirect_uri=${redirect}`;
+    });
+  </script>
 </body>
 </html>
