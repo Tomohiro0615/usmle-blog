@@ -2,32 +2,17 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>サイト管理</title>
   <link rel="stylesheet" href="/assets/styles.css" />
   <style>
-    body{margin:0;padding:0}
+    body{margin:0}
     .wrap{max-width:760px;margin:24px auto;padding:16px}
-    .card{border:1px solid #ccc;border-radius:8px;padding:16px;margin:12px 0}
-    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
-    .ok{color:#0a7f00;font-weight:600}
-    .ng{color:#b00020;font-weight:600}
+    .note{border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px 0;font-size:14px}
   </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>管理画面</h1>
-    <div class="card mono" id="log">起動中…</div>
-    <div class="card"><strong>状態:</strong> <span id="status">初期化</span></div>
-  </div>
 
+  <!-- 1) CMS 設定をページ内に内蔵（外部 config.yml は使いません） -->
   <script>
-    const logEl = document.getElementById('log');
-    const stEl  = document.getElementById('status');
-    const log = (m, cls) => { const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=m; logEl.appendChild(d); };
-    const setStatus = (t) => stEl.textContent = t;
-
-    // ---- CMS 設定（内蔵） ----
     window.CMS_CONFIG = {
       load_config_file: false,
       config: {
@@ -57,79 +42,33 @@
         ]
       }
     };
-    log('STEP1: CMS_CONFIG 設定OK','ok');
+  </script>
 
-    // ---- 汎用スクリプトローダ（CORS有効） ----
-    function loadScript(src, label){
-      return new Promise((resolve,reject)=>{
-        const s=document.createElement('script');
-        s.src=src;
-        s.crossOrigin='anonymous';
-        s.onload=()=>{ log(`LOAD OK: ${label}`,'ok'); resolve(); };
-        s.onerror=()=>{ log(`LOAD NG: ${label} (${src})`,'ng'); reject(new Error(label)); };
-        document.head.appendChild(s);
-      });
-    }
+  <!-- 2) Netlify CMS v2（安定版）を読み込む：この版は window.CMS を必ず提供 -->
+  <script src="https://unpkg.com/netlify-cms@2.10.192/dist/netlify-cms.js" crossorigin="anonymous"></script>
 
-    // ---- グローバルからCMS候補を拾う ----
-    function adoptCMS(){
-      const candidates=[
-        'CMS','DecapCms','DecapCMS','decapCms','NetlifyCms','NetlifyCMS','netlifyCms','NetlifyCmsApp'
-      ];
-      for(const k of candidates){ const v=window[k]; if(v && typeof v.init==='function'){ window.CMS=v; return k; } }
-      for(const k of Object.keys(window)){ if(/cms/i.test(k)){ const v=window[k]; if(v && typeof v.init==='function'){ window.CMS=v; return k; } } }
-      return null;
-    }
-
-    // ---- 起動シーケンス：Decap → 旧Netlify CMSにフォールバック ----
-    (async () => {
-      try{
-        setStatus('Identity読込中…');
-        await loadScript('https://identity.netlify.com/v1/netlify-identity-widget.js','Identity Widget');
-
-        setStatus('Decap CMS 読込中…');
-        await loadScript('https://unpkg.com/decap-cms@^3/dist/decap-cms.js','Decap CMS (unpkg)');
-      }catch(e){
-        log('Decapの読込で問題発生 → 後でフォールバックを試します','ng');
-      }
-
-      // Decapがwindowに居るか確認
-      let adopted = adoptCMS();
-      if(!adopted){
-        setStatus('旧Netlify CMS へフォールバック中…');
-        try{
-          // 安定動作確認のある旧版を読み込む
-          await loadScript('https://unpkg.com/netlify-cms@^2/dist/netlify-cms.js','Netlify CMS v2 (fallback)');
-          adopted = adoptCMS();
-        }catch(e2){
-          setStatus('CMS本体の読み込みに失敗');
-          log('致命的: Decap/Netlify CMS どちらも読み込めません','ng');
-          return;
+  <!-- 3) 起動（プレビューにサイトCSSを適用） -->
+  <script>
+    (function start(){
+      function boot(){
+        if (window.CMS && typeof window.CMS.init === 'function') {
+          window.CMS.registerPreviewStyle('/assets/styles.css');
+          window.CMS.init(window.CMS_CONFIG);
+        } else {
+          setTimeout(boot, 200);
         }
       }
-
-      if(!adopted){
-        setStatus('CMSが見つかりません（CSP/通信を確認）');
-        log('CMSオブジェクト未検出','ng');
-        return;
-      }
-      log(`ADOPT: window.${adopted} を window.CMS に採用`,'ok');
-
-      // ここで起動
-      try{
-        setStatus('CMS初期化中…');
-        CMS.init(window.CMS_CONFIG);
-        setStatus('CMS起動OK（左側にUIが出ます）');
-        log('STEP3: CMS.init() 実行','ok');
-      }catch(e){
-        setStatus('CMS初期化エラー');
-        log('CMS.init エラー: '+(e.stack||e.message),'ng');
-      }
+      boot();
     })();
-
-    // 例外可視化
-    window.addEventListener('error',(e)=>log('window.error: '+e.message,'ng'));
-    window.addEventListener('unhandledrejection',(e)=>log('unhandledrejection: '+(e.reason&&e.reason.message),'ng'));
   </script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>管理画面</h1>
+    <div class="note">
+      ログイン画面が表示されない場合は、Netlify の <b>Identity → Git Gateway</b> が有効か確認し、<br>
+      招待メールのリンクを <b>Safariの通常タブ</b>で開いてから、このページを再読み込みしてください。
+    </div>
+  </div>
 </body>
 </html>
