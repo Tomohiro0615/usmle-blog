@@ -1,277 +1,164 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>USMLE情報ブログ</title>
-    <link rel="stylesheet" href="/assets/styles.css" />
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  </head>
-  <body>
-    <header><h1>USMLE情報ブログ</h1></header>
-    <main>
-      <section class="search-filter">
-        <input type="text" id="searchInput" placeholder="キーワード検索" />
-        <div id="tagList"></div>
-      </section>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>USMLE Japan Blog</title>
+<link rel="stylesheet" href="/assets/styles.css">
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;line-height:1.6;background:var(--bg,#fff);color:var(--fg,#111)}
+  header{padding:20px 16px;border-bottom:1px solid #e5e7eb}
+  main{max-width:900px;margin:0 auto;padding:16px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 16px}
+  input[type="search"]{flex:1;min-width:220px;padding:10px;border:1px solid #cbd5e1;border-radius:8px}
+  .tag{display:inline-block;padding:2px 8px;border:1px solid #cbd5e1;border-radius:999px;font-size:12px;margin-right:6px}
+  .card{border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin:12px 0}
+  .meta{font-size:12px;color:#6b7280;margin-bottom:6px}
+  .pager{display:flex;gap:8px;justify-content:center;margin:20px 0}
+  .pager button{padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff}
+  @media (prefers-color-scheme: dark){
+    :root{--bg:#0b0f14;--fg:#e5e7eb}
+    header, .card{border-color:#1f2937}
+    input[type="search"], .pager button{background:#0b0f14;color:#e5e7eb;border-color:#374151}
+  }
+</style>
+</head>
+<body>
+<header>
+  <main>
+    <h1 style="margin:0 0 4px">USMLE Japan Blog</h1>
+    <div class="toolbar">
+      <input id="q" type="search" placeholder="検索（タイトル/抜粋/タグ）">
+      <div id="tags"></div>
+      <a class="tag" href="/admin/">管理画面</a>
+    </div>
+  </main>
+</header>
 
-      <!-- 診断用（不要になれば削除OK） -->
-      <div id="diag" style="padding:8px;border:1px solid #ccc;margin:8px;white-space:pre-wrap;"></div>
+<main>
+  <div id="list"></div>
+  <div class="pager">
+    <button id="prev">前へ</button>
+    <div id="pageInfo" aria-live="polite"></div>
+    <button id="next">次へ</button>
+  </div>
+</main>
 
-      <section id="postsContainer"></section>
-      <nav id="pagination"></nav>
-    </main>
+<script>
+const OWNER = 'Tomohiro0615';
+const REPO  = 'usmle-blog';
+const BRANCH = 'main';
+const PER_PAGE = 10;
 
-    <script>
-      /* あなたのリポジトリ情報 */
-      const REPO_OWNER = 'Tomohiro0615';
-      const REPO_NAME  = 'usmle-blog';
-      const BRANCH = 'main';
+const listEl = document.getElementById('list');
+const tagsEl = document.getElementById('tags');
+const qEl = document.getElementById('q');
+const prevBtn = document.getElementById('prev');
+const nextBtn = document.getElementById('next');
+const pageInfo = document.getElementById('pageInfo');
 
-      let allPosts = [];
-      const postsPerPage = 10;
-      let currentPage = 1;
-      const diag = document.getElementById('diag');
+let allPosts = [];
+let currentTag = null;
+let currentPage = 1;
 
-      /* --------- GitHub API helpers --------- */
-      function base64ToUtf8String(b64) {
-        const binary = atob((b64 || '').replace(/\n/g, ''));
-        if (window.TextDecoder) {
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          try { return new TextDecoder('utf-8', { fatal: false }).decode(bytes); } catch {}
-        }
-        try { return decodeURIComponent(escape(binary)); } catch { return binary; }
+async function fetchJSON(url){ const r = await fetch(url); if(!r.ok) throw new Error(url); return r.json(); }
+async function fetchText(url){ const r = await fetch(url); if(!r.ok) throw new Error(url); return r.text(); }
+
+function parseFrontMatter(md){
+  const m = md.match(/^---\n([\s\S]*?)\n---\n?/);
+  if(!m) return { data:{}, body: md };
+  const yaml = m[1];
+  const body = md.slice(m[0].length);
+  const data = {};
+  yaml.split(/\r?\n/).forEach(line=>{
+    const mm = line.match(/^(\w+):\s*(.*)$/);
+    if(mm){ 
+      const k = mm[1].trim();
+      let v = mm[2].trim();
+      if(v === 'true') v = true;
+      else if(v === 'false') v = false;
+      else if(v.startsWith('[') && v.endsWith(']')){
+        try { v = JSON.parse(v.replace(/([^\s"',\[\]]+)/g,'"$1"')); } catch(e){}
+      } else {
+        v = v.replace(/^"(.*)"$/,'$1');
       }
+      data[k]=v;
+    }
+  });
+  return { data, body };
+}
 
-      async function githubListPosts() {
-        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/posts?ref=${BRANCH}`;
-        const r = await fetch(url);
-        const text = await r.text();
-        if (!r.ok) throw new Error(`List posts NG ${r.status}: ${text}`);
-        return JSON.parse(text).filter(f => f.type === 'file' && f.name.endsWith('.md'));
-      }
+function render(){
+  let posts = allPosts.filter(p=>!p.data.draft);
+  if(currentTag) posts = posts.filter(p=>(p.data.tags||[]).includes(currentTag));
+  const q = qEl.value.trim().toLowerCase();
+  if(q) posts = posts.filter(p=>{
+    const hay = (p.data.title||'')+' '+(p.data.excerpt||'')+' '+(p.data.tags||[]).join(' ');
+    return hay.toLowerCase().includes(q);
+  });
+  posts.sort((a,b)=> (b.data.date||'').localeCompare(a.data.date||''));
 
-      async function githubGetFileUtf8(path) {
-        path = path.replace(/^\/+/, '');
-        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}?ref=${BRANCH}`;
-        const r = await fetch(url);
-        const text = await r.text();
-        if (!r.ok) throw new Error(`Get file NG ${r.status}: ${text}`);
-        const data = JSON.parse(text);
-        return base64ToUtf8String(data.content);
-      }
+  const totalPages = Math.max(1, Math.ceil(posts.length / PER_PAGE));
+  currentPage = Math.min(currentPage, totalPages);
+  const start = (currentPage-1)*PER_PAGE;
+  const pageItems = posts.slice(start, start+PER_PAGE);
 
-      /* --------- Front matter parser --------- */
-      function parseYAML(yaml) {
-        const lines = (yaml || '').split('\n');
-        const obj = {};
-        for (const line of lines) {
-          if (!line || !line.includes(':')) continue;
-          const idx = line.indexOf(':');
-          const key = line.slice(0, idx).trim();
-          let value = line.slice(idx + 1).trim();
-          if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-            value = value.slice(1, -1);
-          }
-          if (/^\d{4}-\d{2}-\d{2}/.test(value)) obj[key] = value;
-          else if (value === 'true' || value === 'false') obj[key] = (value === 'true');
-          else if (value.startsWith('[') && value.endsWith(']')) {
-            obj[key] = value.slice(1, -1).split(',')
-              .map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
-          } else obj[key] = value;
-        }
-        return obj;
-      }
+  listEl.innerHTML = pageItems.map(p=>`
+    <article class="card">
+      <div class="meta">${p.data.date||''} ${ (p.data.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('') }</div>
+      <h2 style="margin:.2em 0;"><a href="/post_view.html?path=/posts/${encodeURIComponent(p.name)}">${p.data.title||p.name}</a></h2>
+      <p>${p.data.excerpt||''}</p>
+    </article>
+  `).join('') || '<p>記事がありません。</p>';
 
-      function parseFrontMatter(content) {
-        const fmRegex = /^---\n([\s\S]*?)\n---\n?/;
-        const match = content.match(fmRegex);
-        let metadata = {};
-        let body = content || '';
-        if (match) {
-          const yaml = match[1];
-          body = content.slice(match[0].length);
-          metadata = parseYAML(yaml);
-        }
-        return { ...metadata, body };
-      }
+  pageInfo.textContent = `${currentPage} / ${totalPages}`;
+  prevBtn.disabled = currentPage<=1;
+  nextBtn.disabled = currentPage>=totalPages;
 
-      /* --------- Fetch & render --------- */
-      async function fetchPostsList() {
-        diag.textContent = '診断: posts一覧取得中...';
-        const files = await githubListPosts();
-        diag.textContent = `診断: posts一覧取得OK（${files.length}件）\n` + diag.textContent;
+  // タグ一覧（初回のみ作成）
+  if(!tagsEl.dataset.ready){
+    const tagSet = new Set();
+    allPosts.forEach(p=> (p.data.tags||[]).forEach(t=> tagSet.add(t)));
+    tagsEl.innerHTML = ['すべて', ...Array.from(tagSet)].map(t=>{
+      const active = (t===currentTag) || (!currentTag && t==='すべて');
+      return `<button class="tag" data-tag="${t==='すべて'?'':t}" style="${active?'background:#eef':''}">${t}</button>`;
+    }).join('');
+    tagsEl.dataset.ready = '1';
+  }
+}
 
-        const posts = [];
-        for (const f of files) {
-          try {
-            const raw = await githubGetFileUtf8(`posts/${f.name}`);
-            const post = parseFrontMatter(raw);
-            post.path = `posts/${f.name}`;
-            if (!post.title) post.title = f.name.replace(/\.md$/, '');
-            if (post.draft === undefined) post.draft = false;
-            posts.push(post);
-          } catch (e) {
-            diag.textContent = `診断: ${f.name} の取得/解析エラー: ${e.message}\n` + diag.textContent;
-          }
-        }
-        posts.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-        allPosts = posts;
-        try {
-          initTags();
-          renderPosts();
-          diag.textContent = `診断: 描画完了（表示対象 ${allPosts.filter(p=>!p.draft).length}件）\n` + diag.textContent;
-        } catch (e) {
-          diag.textContent = `診断: 描画中エラー: ${e.message}\n` + diag.textContent;
-        }
-      }
+async function load(){
+  // postsフォルダの一覧をGitHub APIから取得
+  const list = await fetchJSON(`https://api.github.com/repos/${OWNER}/${REPO}/contents/posts?ref=${BRANCH}`);
+  const mdFiles = list.filter(x=>x.type==='file' && x.name.endsWith('.md'));
+  // 各mdをrawで取得→フロントマター解析
+  const posts = [];
+  for(const f of mdFiles){
+    const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/posts/${encodeURIComponent(f.name)}`;
+    try{
+      const md = await fetchText(rawUrl);
+      const fm = parseFrontMatter(md);
+      posts.push({ name:f.name, data:fm.data, body:fm.body });
+    }catch(e){ /* skip */ }
+  }
+  allPosts = posts;
+  render();
+}
 
-      function initTags() {
-        const set = new Set();
-        allPosts.forEach(p => {
-          if (p.draft === true) return;
-          if (Array.isArray(p.tags)) p.tags.forEach(t => set.add(t));
-          else if (p.tags) set.add(p.tags);
-        });
-        const tagListDiv = document.getElementById('tagList');
-        tagListDiv.innerHTML = '';
-        set.forEach(tag => {
-          const btn = document.createElement('button');
-          btn.className = 'tag-button';
-          btn.textContent = tag;
-          btn.onclick = () => {
-            const url = new URL(window.location);
-            url.searchParams.set('tag', tag);
-            history.replaceState(null, '', url);
-            currentPage = 1;
-            renderPosts();
-          };
-          tagListDiv.appendChild(btn);
-        });
-      }
+qEl.addEventListener('input', ()=>{ currentPage=1; render(); });
+prevBtn.addEventListener('click', ()=>{ currentPage--; render(); });
+nextBtn.addEventListener('click', ()=>{ currentPage++; render(); });
+tagsEl.addEventListener('click', (e)=>{
+  const t = e.target.closest('[data-tag]'); if(!t) return;
+  currentTag = t.dataset.tag || null;
+  tagsEl.dataset.ready=''; // 再描画でactive更新
+  currentPage=1; render();
+});
 
-      function renderPosts() {
-        const params = new URLSearchParams(window.location.search);
-        const searchTerm = (document.getElementById('searchInput').value || '').toLowerCase();
-        const tagFilter = params.get('tag');
-
-        let posts = allPosts.filter(p => p && p.draft !== true);
-        if (tagFilter) posts = posts.filter(p => (Array.isArray(p.tags) ? p.tags.includes(tagFilter) : p.tags === tagFilter));
-        if (searchTerm) {
-          posts = posts.filter(p => {
-            const inTitle = (p.title || '').toLowerCase().includes(searchTerm);
-            const inExcerpt = (p.excerpt || '').toLowerCase().includes(searchTerm);
-            const inTags = Array.isArray(p.tags) && p.tags.some(t => (t||'').toLowerCase().includes(searchTerm));
-            return inTitle || inExcerpt || inTags;
-          });
-        }
-
-        const container = document.getElementById('postsContainer');
-        container.innerHTML = '';
-        const totalPages = Math.ceil(posts.length / postsPerPage) || 1;
-        if (currentPage > totalPages) currentPage = 1;
-        const start = (currentPage - 1) * postsPerPage;
-        const display = posts.slice(start, start + postsPerPage);
-
-        display.forEach(post => {
-          const card = document.createElement('article');
-          card.className = 'post-card';
-
-          if (post.eyecatch) {
-            const img = document.createElement('img');
-            img.className = 'post-eyecatch';
-            img.src = post.eyecatch.startsWith('http') ? post.eyecatch : `/assets/uploads/${post.eyecatch}`;
-            img.alt = post.title || '';
-            img.onerror = () => img.remove();
-            card.appendChild(img);
-          }
-
-          const h2 = document.createElement('h2');
-          const a = document.createElement('a');
-          a.href = `/post_view.html?path=${encodeURIComponent(post.path)}`;
-          a.textContent = post.title || '無題';
-          h2.appendChild(a);
-          card.appendChild(h2);
-
-          if (post.date) {
-            const t = document.createElement('time');
-            t.className = 'post-date';
-            t.dateTime = post.date;
-            try { t.textContent = new Date(post.date).toLocaleDateString('ja-JP'); }
-            catch { t.textContent = post.date; }
-            card.appendChild(t);
-          }
-
-          if (post.excerpt) {
-            const p = document.createElement('p');
-            p.className = 'post-excerpt';
-            p.textContent = post.excerpt;
-            card.appendChild(p);
-          }
-
-          if (post.tags) {
-            const tagsDiv = document.createElement('div');
-            tagsDiv.className = 'post-tags';
-            (Array.isArray(post.tags) ? post.tags : [post.tags]).forEach(tag => {
-              const span = document.createElement('span');
-              span.className = 'tag';
-              span.textContent = tag;
-              span.onclick = () => {
-                const url = new URL(window.location);
-                url.searchParams.set('tag', tag);
-                history.replaceState(null, '', url);
-                currentPage = 1;
-                renderPosts();
-              };
-              tagsDiv.appendChild(span);
-            });
-            card.appendChild(tagsDiv);
-          }
-
-          container.appendChild(card);
-        });
-
-        const nav = document.getElementById('pagination');
-        nav.innerHTML = '';
-        for (let i = 1; i <= totalPages; i++) {
-          const btn = document.createElement('button');
-          btn.textContent = i;
-          btn.disabled = i === currentPage;
-          btn.onclick = () => { currentPage = i; renderPosts(); window.scrollTo({top:0,behavior:'smooth'}); };
-          nav.appendChild(btn);
-        }
-      }
-
-      document.getElementById('searchInput').addEventListener('input', () => {
-        currentPage = 1; renderPosts();
-      });
-
-      (async () => {
-        try { await fetchPostsList(); }
-        catch (e) { diag.textContent = `診断: 失敗 ${e.message}`; }
-      })();
-    </script>
-
-    <!-- ▼▼ Netlify Identity（招待リンク処理＆ログインUI） ▼▼ -->
-    <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
-    <script>
-      if (window.netlifyIdentity) {
-        const hash = window.location.hash || '';
-        netlifyIdentity.on('init', (user) => {
-          const hasInvite = /invite_token=|confirmation_token=/.test(hash);
-          if (!user && hasInvite) {
-            netlifyIdentity.open('signup'); // 招待リンクで開いたら自動でUI表示
-          }
-        });
-        netlifyIdentity.on('login', () => {
-          window.location.href = '/admin/'; // ログイン完了後は管理画面へ
-        });
-        netlifyIdentity.on('signup', () => {
-          window.location.href = '/admin/'; // サインアップ完了後も管理画面へ
-        });
-      }
-    </script>
-    <!-- ▲▲ Netlify Identity ▲▲ -->
-  </body>
+load().catch(err=>{
+  listEl.innerHTML = `<p>記事の読み込みでエラーが発生しました。</p>`;
+  console.error(err);
+});
+</script>
+</body>
 </html>
