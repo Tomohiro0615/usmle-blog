@@ -3,24 +3,23 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>管理画面（ホスト型ログイン）</title>
+  <title>サイト管理（GitHubでログイン）</title>
   <link rel="stylesheet" href="/assets/styles.css" />
-  <style>
-    html,body{height:100%;margin:0}
-    .wrap{max-width:760px;margin:24px auto;padding:16px}
-    .card{border:1px solid #ccc;border-radius:8px;padding:16px;margin:12px 0}
-    .btn{display:inline-block;padding:10px 14px;border-radius:6px;border:1px solid #0b63ce;text-decoration:none}
-    .btn{background:#0b63ce;color:#fff}
-    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
-    .ok{color:#0a7f00;font-weight:600}.ng{color:#b00020;font-weight:600}
-  </style>
+  <style>body{margin:0}.wrap{max-width:760px;margin:24px auto;padding:16px}.note{border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px 0;font-size:14px}</style>
 
-  <!-- CMS 設定：Git Gateway を使用（Netlify Identity 必須だが、ログインはホスト型ページへ） -->
+  <!-- CMS設定：GitHubバックエンド。Netlifyホスティングの場合は base_url と auth_endpoint を指定すると
+       Netlify の OAuth プロキシを自動利用できます（Identity不要）。 -->
   <script>
     window.CMS_CONFIG = {
       load_config_file: false,
       config: {
-        backend: { name: 'git-gateway', branch: 'main' },
+        backend: {
+          name: 'github',
+          repo: 'Tomohiro0615/usmle-blog',
+          branch: 'main',
+          base_url: 'https://api.netlify.com',
+          auth_endpoint: '/auth'
+        },
         media_folder: 'assets/uploads',
         public_folder: '/assets/uploads',
         locale: 'ja',
@@ -48,47 +47,28 @@
     };
   </script>
 
-  <!-- CMS 本体（安定版） -->
+  <!-- Netlify CMS 本体（安定版） -->
   <script src="https://unpkg.com/netlify-cms@2.10.192/dist/netlify-cms.js" crossorigin="anonymous"></script>
-</head>
-<body>
-  <div class="wrap">
-    <h1>管理画面</h1>
-
-    <div class="card">
-      <p>ログインできない場合は、下のボタンから<strong>Netlifyのホスト型ログイン</strong>を開いてサインイン後、戻ってきてこのページを再読み込みしてください。</p>
-      <p>
-        <a class="btn" href="/.netlify/identity">Netlifyのログインページを開く</a>
-        <a class="btn" href="/.netlify/identity/logout" style="background:#666;border-color:#666;margin-left:8px">ログアウト</a>
-      </p>
-      <p style="font-size:13px;opacity:.8">※ 招待メールのリンクも <b>Safariの通常タブ</b>で開いてください（アプリ内ブラウザ不可）。</p>
-    </div>
-
-    <div class="card mono" id="log">起動中…</div>
-  </div>
 
   <script>
-    const logEl = document.getElementById('log');
-    const log = (m, cls)=>{const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=m; logEl.appendChild(d);};
-
-    // CMS 起動（ウィジェット不要）
     (function boot(){
       function start(){
         if (window.CMS && typeof window.CMS.init === 'function') {
-          try {
-            window.CMS.registerPreviewStyle('/assets/styles.css');
-            window.CMS.init(window.CMS_CONFIG);
-            log('CMS.init 実行 → 右上に Login が出ます。','ok');
-          } catch(e) {
-            log('CMS.init エラー: ' + (e.stack||e.message),'ng');
-          }
+          window.CMS.registerPreviewStyle('/assets/styles.css');
+          window.CMS.init(window.CMS_CONFIG);
         } else { setTimeout(start, 200); }
       }
       start();
     })();
-
-    window.addEventListener('error', e=>log('window.error: '+e.message,'ng'));
-    window.addEventListener('unhandledrejection', e=>log('unhandledrejection: '+(e.reason&&e.reason.message),'ng'));
   </script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>管理画面</h1>
+    <div class="note">
+      このページを開くと、右上に <b>Login with GitHub</b> が表示されます。タップして GitHub 連携を承認してください。<br>
+      承認後、左側に「投稿」が表示され、新規作成→公開ができます。
+    </div>
+  </div>
 </body>
 </html>
