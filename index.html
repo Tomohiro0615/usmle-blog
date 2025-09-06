@@ -1,1 +1,295 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>USMLE情報ブログ</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+    <!-- 軽量 Markdown パーサ。CDN から1つだけ読み込みます -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>USMLE情報ブログ</h1>
+    </header>
+    <main>
+      <section class="search-filter">
+        <input
+          type="text"
+          id="searchInput"
+          placeholder="キーワード検索"
+        />
+        <!-- タグフィルタのリスト -->
+        <div id="tagList"></div>
+      </section>
+      <!-- 記事カードを挿入するコンテナ -->
+      <section id="postsContainer"></section>
+      <!-- ページネーション -->
+      <nav id="pagination"></nav>
+    </main>
+    <script>
+      // GitHubリポジトリ設定。***必ずご自身のリポジトリ情報に置き換えてください***
+      const REPO_OWNER = 'your-github-username';
+      const REPO_NAME = 'your-repo-name';
+      const BRANCH = 'main';
+
+      // 取得した全記事の配列
+      let allPosts = [];
+      // 1ページに表示する件数
+      const postsPerPage = 10;
+      let currentPage = 1;
+
+      /**
+       * posts フォルダから Markdown ファイルの一覧を取得し、フロントマターを解析して配列に格納します。
+       */
+      async function fetchPostsList() {
+        const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/posts?ref=${BRANCH}`;
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+          throw new Error('Failed to fetch posts list');
+        }
+        const files = await response.json();
+        // .md ファイルのみ抽出
+        const mdFiles = files.filter(
+          (f) => f.type === 'file' && f.name.endsWith('.md')
+        );
+        const posts = [];
+        for (const file of mdFiles) {
+          // download_url は CORS 対応済みの生データ URL
+          const contentRes = await fetch(file.download_url);
+          const rawContent = await contentRes.text();
+          const post = parseFrontMatter(rawContent);
+          post.path = `posts/${file.name}`;
+          posts.push(post);
+        }
+        // 日付の降順にソート
+        posts.sort((a, b) => new Date(b.date) - new Date(a.date));
+        allPosts = posts;
+        initTags();
+        renderPosts();
+      }
+
+      /**
+       * フロントマターを解析し、本文と分離してオブジェクト化します。
+       * YAML のフル機能は不要なため、簡易的なパーサを実装しています。
+       */
+      function parseFrontMatter(content) {
+        const fmRegex = /^---\n([\s\S]*?)\n---\n?/;
+        const match = content.match(fmRegex);
+        let metadata = {};
+        let body = content;
+        if (match) {
+          const yaml = match[1];
+          body = content.slice(match[0].length);
+          metadata = parseYAML(yaml);
+        }
+        return { ...metadata, body };
+      }
+
+      /**
+       * YAML フロントマターの簡易パーサ。
+       * - key: value 形式を解析します
+       * - 日付、真偽値、リストを適宜変換します
+       */
+      function parseYAML(yaml) {
+        const lines = yaml.split('\n');
+        const obj = {};
+        for (const line of lines) {
+          const idx = line.indexOf(':');
+          if (idx > -1) {
+            const key = line.slice(0, idx).trim();
+            let value = line.slice(idx + 1).trim();
+            // クォートを除去
+            if (
+              (value.startsWith('"') && value.endsWith('"')) ||
+              (value.startsWith("'") && value.endsWith("'"))
+            ) {
+              value = value.slice(1, -1);
+            }
+            // 日付判定
+            if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+              obj[key] = value;
+            } else if (value === 'true' || value === 'false') {
+              obj[key] = value === 'true';
+            } else if (value.startsWith('[') && value.endsWith(']')) {
+              // 配列はカンマ区切りで分割し、クォートを除去
+              const list = value
+                .slice(1, -1)
+                .split(',')
+                .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+                .filter(Boolean);
+              obj[key] = list;
+            } else {
+              obj[key] = value;
+            }
+          }
+        }
+        return obj;
+      }
+
+      /**
+       * タグ一覧を初期化し、クリック時に URL クエリを更新します。
+       */
+      function initTags() {
+        const tagSet = new Set();
+        allPosts.forEach((p) => {
+          if (p.draft === true) return;
+          if (Array.isArray(p.tags)) {
+            p.tags.forEach((tag) => tagSet.add(tag));
+          } else if (p.tags) {
+            tagSet.add(p.tags);
+          }
+        });
+        const tagListDiv = document.getElementById('tagList');
+        tagListDiv.innerHTML = '';
+        tagSet.forEach((tag) => {
+          const btn = document.createElement('button');
+          btn.className = 'tag-button';
+          btn.textContent = tag;
+          btn.onclick = () => {
+            const url = new URL(window.location);
+            url.searchParams.set('tag', tag);
+            history.replaceState(null, '', url);
+            currentPage = 1;
+            renderPosts();
+          };
+          tagListDiv.appendChild(btn);
+        });
+      }
+
+      /**
+       * 条件（タグ、検索語）に応じて記事をフィルタし、ページネーションして描画します。
+       */
+      function renderPosts() {
+        const params = new URLSearchParams(window.location.search);
+        const searchTerm = document
+          .getElementById('searchInput')
+          .value.toLowerCase();
+        const tagFilter = params.get('tag');
+        let posts = allPosts.filter((p) => p.draft !== true);
+        if (tagFilter) {
+          posts = posts.filter((p) => {
+            return Array.isArray(p.tags)
+              ? p.tags.includes(tagFilter)
+              : p.tags === tagFilter;
+          });
+        }
+        if (searchTerm) {
+          posts = posts.filter((p) => {
+            const inTitle = p.title && p.title.toLowerCase().includes(searchTerm);
+            const inExcerpt =
+              p.excerpt && p.excerpt.toLowerCase().includes(searchTerm);
+            const inTags =
+              Array.isArray(p.tags) &&
+              p.tags.some((t) => t.toLowerCase().includes(searchTerm));
+            return inTitle || inExcerpt || inTags;
+          });
+        }
+        // ページネーション
+        const totalPages = Math.ceil(posts.length / postsPerPage);
+        if (currentPage > totalPages) currentPage = 1;
+        const start = (currentPage - 1) * postsPerPage;
+        const end = start + postsPerPage;
+        const displayPosts = posts.slice(start, end);
+        const container = document.getElementById('postsContainer');
+        container.innerHTML = '';
+        displayPosts.forEach((post) => {
+          const card = document.createElement('article');
+          card.className = 'post-card';
+          // アイキャッチ画像
+          if (post.eyecatch) {
+            const img = document.createElement('img');
+            img.className = 'post-eyecatch';
+            img.src = post.eyecatch.startsWith('http')
+              ? post.eyecatch
+              : `/assets/uploads/${post.eyecatch}`;
+            img.alt = post.title;
+            card.appendChild(img);
+          }
+          // タイトル
+          const title = document.createElement('h2');
+          const link = document.createElement('a');
+          link.href = `/post_view.html?path=${encodeURIComponent(post.path)}`;
+          link.textContent = post.title || '無題';
+          title.appendChild(link);
+          card.appendChild(title);
+          // 日付
+          if (post.date) {
+            const dateElem = document.createElement('time');
+            dateElem.className = 'post-date';
+            dateElem.dateTime = post.date;
+            try {
+              dateElem.textContent = new Date(post.date).toLocaleDateString('ja-JP');
+            } catch (e) {
+              dateElem.textContent = post.date;
+            }
+            card.appendChild(dateElem);
+          }
+          // 抜粋
+          if (post.excerpt) {
+            const excerpt = document.createElement('p');
+            excerpt.className = 'post-excerpt';
+            excerpt.textContent = post.excerpt;
+            card.appendChild(excerpt);
+          }
+          // タグ表示
+          if (post.tags) {
+            const tagsDiv = document.createElement('div');
+            tagsDiv.className = 'post-tags';
+            const tags = Array.isArray(post.tags) ? post.tags : [post.tags];
+            tags.forEach((tag) => {
+              const span = document.createElement('span');
+              span.className = 'tag';
+              span.textContent = tag;
+              span.onclick = () => {
+                const url = new URL(window.location);
+                url.searchParams.set('tag', tag);
+                history.replaceState(null, '', url);
+                currentPage = 1;
+                renderPosts();
+              };
+              tagsDiv.appendChild(span);
+            });
+            card.appendChild(tagsDiv);
+          }
+          container.appendChild(card);
+        });
+        renderPagination(totalPages);
+      }
+
+      /**
+       * ページネーションのボタンを描画します。
+       */
+      function renderPagination(totalPages) {
+        const nav = document.getElementById('pagination');
+        nav.innerHTML = '';
+        if (totalPages <= 1) return;
+        for (let i = 1; i <= totalPages; i++) {
+          const btn = document.createElement('button');
+          btn.textContent = i;
+          btn.disabled = i === currentPage;
+          btn.onclick = () => {
+            currentPage = i;
+            renderPosts();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          };
+          nav.appendChild(btn);
+        }
+      }
+
+      // 入力欄の変更で再描画
+      document.getElementById('searchInput').addEventListener('input', () => {
+        currentPage = 1;
+        renderPosts();
+      });
+
+      // 初回読み込み
+      fetchPostsList().catch((err) => {
+        document.getElementById('postsContainer').textContent =
+          '記事が読み込めませんでした。';
+        console.error(err);
+      });
+    </script>
+  </body>
+</html>
 
