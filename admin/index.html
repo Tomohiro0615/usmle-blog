@@ -1,31 +1,50 @@
-<!--
-  管理画面のエントリポイントです。Decap CMS本体をCDNから読み込み、
-  config.yml（同ディレクトリ）を自動的に読み込みます。プレビュー用に
-  サイトのスタイルを登録し、初期化時にデバッグ用のログを出力します。
--->
 <!DOCTYPE html>
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>サイト管理</title>
-    <!-- Decap CMS本体。@^3は最新版のメジャーバージョン3系を使用します -->
+
+    <!-- Netlify Identity ウィジェット（招待リンク処理・ログイン用） -->
+    <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+
+    <!-- Decap CMS 本体 -->
     <script>
-      // 手動初期化を指定し、設定ファイルの読み込み後に初期化します。
       window.CMS_MANUAL_INIT = true;
     </script>
     <script src="https://unpkg.com/decap-cms@^3/dist/decap-cms.js"></script>
-    <!-- サイトのスタイルをプレビューにも反映させるため読み込みます -->
+
+    <!-- プレビューにフロントのCSSを反映 -->
     <link rel="stylesheet" href="/assets/styles.css" />
   </head>
   <body>
     <script>
-      // 管理画面側でもフロントエンドと同じスタイルを使用できるよう登録
+      // Decap CMS 初期化
       CMS.registerPreviewStyle('/assets/styles.css');
-      // CMSを初期化
       CMS.init();
-      console.log('Decap CMS initialized');
+      console.log('Decap CMS initialized');
+
+      // --- Netlify Identity の初期化とハンドラ ---
+      if (window.netlifyIdentity) {
+        // 初期化後、未ログインならログインUIを出す（必要時）
+        netlifyIdentity.on('init', (user) => {
+          console.log('Identity init:', user ? 'logged in' : 'logged out');
+        });
+
+        // 招待メールのリンクを踏んだ直後など、signup完了で自動遷移
+        netlifyIdentity.on('login', () => {
+          console.log('Identity login');
+          // 同じ /admin/ にリロードして CMS を使い始める
+          window.location.reload();
+        });
+
+        netlifyIdentity.on('logout', () => {
+          console.log('Identity logout');
+        });
+
+        // /admin に直接来た場合で未ログイン → UIを出したい時はこれを有効化
+        // netlifyIdentity.open(); // 必要ならコメント解除
+      }
     </script>
   </body>
 </html>
-
