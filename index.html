@@ -14,7 +14,8 @@
         <input type="text" id="searchInput" placeholder="キーワード検索" />
         <div id="tagList"></div>
       </section>
-      <!-- 診断用（トラブル時の状況表示。落ち着いたら消してOK） -->
+
+      <!-- 診断用（不要になれば削除OK） -->
       <div id="diag" style="padding:8px;border:1px solid #ccc;margin:8px;white-space:pre-wrap;"></div>
 
       <section id="postsContainer"></section>
@@ -251,5 +252,26 @@
         catch (e) { diag.textContent = `診断: 失敗 ${e.message}`; }
       })();
     </script>
+
+    <!-- ▼▼ Netlify Identity（招待リンク処理＆ログインUI） ▼▼ -->
+    <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+    <script>
+      if (window.netlifyIdentity) {
+        const hash = window.location.hash || '';
+        netlifyIdentity.on('init', (user) => {
+          const hasInvite = /invite_token=|confirmation_token=/.test(hash);
+          if (!user && hasInvite) {
+            netlifyIdentity.open('signup'); // 招待リンクで開いたら自動でUI表示
+          }
+        });
+        netlifyIdentity.on('login', () => {
+          window.location.href = '/admin/'; // ログイン完了後は管理画面へ
+        });
+        netlifyIdentity.on('signup', () => {
+          window.location.href = '/admin/'; // サインアップ完了後も管理画面へ
+        });
+      }
+    </script>
+    <!-- ▲▲ Netlify Identity ▲▲ -->
   </body>
 </html>
