@@ -1,18 +1,70 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>USMLE Japan Blog</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>サイト管理（GitHubでログイン）</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;padding:40px;line-height:1.6}
-    a.btn{display:inline-block;padding:10px 14px;border:1px solid #0b63ce;border-radius:6px;color:#0b63ce;text-decoration:none}
-    h1{margin-top:0}
+    body { margin: 0; }
+    .wrap { max-width: 760px; margin: 24px auto; padding: 16px; }
+    .btn { display: inline-block; padding: 10px 14px; border-radius: 6px; background: #0b63ce; color: #fff; text-decoration: none; border: 1px solid #0b63ce; }
   </style>
+
+  <script>
+    window.CMS_CONFIG = {
+      load_config_file: false,
+      config: {
+        backend: {
+          name: 'github',
+          repo: 'Tomohiro0615/usmle-blog',
+          branch: 'main',
+          base_url: '',
+          auth_endpoint: '/.netlify/functions/authorize' /* ←authorize関数で開始 */
+        },
+        media_folder: 'assets/uploads',
+        public_folder: '/assets/uploads',
+        locale: 'ja',
+        publish_mode: 'editorial_workflow',
+        site_url: 'https://usmle-japan-blog.netlify.app',
+        display_url: 'https://usmle-japan-blog.netlify.app',
+        collections: [{
+          name:'posts', label:'投稿', label_singular:'投稿',
+          folder:'posts', create:true, extension:'md',
+          slug:'{{year}}{{month}}{{day}}-{{slug}}', sort:'date:desc',
+          preview_path:'post_view.html?path=/posts/{{filename}}',
+          fields:[
+            {label:'タイトル', name:'title', widget:'string', required:true},
+            {label:'日付', name:'date', widget:'datetime', format:'YYYY-MM-DD', time_format:false, required:true},
+            {label:'抜粋（一覧に表示）', name:'excerpt', widget:'text'},
+            {label:'タグ', name:'tags', widget:'list'},
+            {label:'アイキャッチ画像', name:'eyecatch', widget:'image', allow_multiple:false},
+            {label:'下書き', name:'draft', widget:'boolean', default:false},
+            {label:'本文（Markdown）', name:'body', widget:'markdown'}
+          ]
+        }]
+      }
+    };
+  </script>
+
+  <script src="https://unpkg.com/netlify-cms@2.10.192/dist/netlify-cms.js" crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      function boot() {
+        if (window.CMS && typeof window.CMS.init === 'function') {
+          window.CMS.registerPreviewStyle('/assets/styles.css');
+          window.CMS.init(window.CMS_CONFIG);
+        } else { setTimeout(boot, 200); }
+      }
+      boot();
+    })();
+  </script>
 </head>
 <body>
-  <h1>USMLE Japan Blog</h1>
-  <p>ようこそ。ここをブログのトップに使えます。</p>
-  <p><a class="btn" href="/admin/">管理画面へ</a></p>
+  <div class="wrap">
+    <h1>管理画面</h1>
+    <p>右上に <b>Login with GitHub</b> が出たらタップして承認してください。<br />
+      出ない場合は <a class="btn" href="/.netlify/functions/authorize">こちら</a> から直接ログイン開始。</p>
+  </div>
 </body>
 </html>
