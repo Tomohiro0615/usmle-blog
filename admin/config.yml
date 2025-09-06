@@ -1,1 +1,75 @@
+##
+# Decap CMS 設定ファイル
+#
+# このファイルでは Git Gateway を利用した GitHub への書き込み、
+# 日本語 UI、コンテンツ構造などを定義します。Netlify Identity を有効化
+# した上で Git Gateway を利用することで、ブラウザから直接 Markdown
+# ファイルを作成・編集できます。
+
+backend:
+  # Git Gateway を使用して GitHub リポジトリへコミットします
+  name: git-gateway
+  branch: main
+
+# アップロードした画像の保存先（リポジトリ内）
+media_folder: "assets/uploads"
+
+# アップロードした画像をフロントエンドから参照する際のパス
+public_folder: "/assets/uploads"
+
+# 管理画面の言語設定。ja を指定すると日本語 UI になります。
+locale: "ja"
+
+collections:
+  # ブログ投稿（Markdown）用のコレクション設定
+  - name: "posts"
+    label: "投稿"
+    label_singular: "記事"
+    description: "ブログ投稿を管理します"
+    # Markdown ファイルを保存するフォルダ
+    folder: "posts"
+    # 新規作成を許可
+    create: true
+    # 拡張子は md 固定
+    extension: "md"
+    # slug はファイル名にそのまま使用します
+    slug: "{{slug}}"
+    # 日付の降順でソート
+    sort: "date:desc"
+    # 各記事のフィールド定義
+    fields:
+      # タイトルは必須の文字列
+      - { label: "タイトル", name: "title", widget: "string" }
+      # 日付は date/time ピッカーで入力し、ISO 日付フォーマットに整形
+      - {
+          label: "日付",
+          name: "date",
+          widget: "datetime",
+          format: "YYYY-MM-DD",
+          date_format: "YYYY-MM-DD",
+          time_format: false,
+          picker_utc: false
+        }
+      # 抜粋は任意のテキスト
+      - { label: "抜粋", name: "excerpt", widget: "text", required: false }
+      # タグは文字列のリスト。個々のタグはタグウィジェットにより追加します
+      - {
+          label: "タグ",
+          name: "tags",
+          widget: "list",
+          required: false,
+          field: { label: "タグ", name: "tag", widget: "string" }
+        }
+      # アイキャッチ画像は単一の画像。ドラッグ＆ドロップまたはアップロード
+      - {
+          label: "アイキャッチ画像",
+          name: "eyecatch",
+          widget: "image",
+          required: false,
+          allow_multiple: false
+        }
+      # 下書きフラグ。true の場合一覧から除外されます
+      - { label: "下書き", name: "draft", widget: "boolean", default: false, required: false }
+      # 本文。Markdown エディタで記述します
+      - { label: "本文", name: "body", widget: "markdown" }
 
