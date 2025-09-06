@@ -1,4 +1,7 @@
-# netlify.toml
+[build]
+# 静的サイトなのでビルドコマンドなし
+publish = "."
+
 [functions]
 directory = "netlify/functions"
 node_bundler = "esbuild"
