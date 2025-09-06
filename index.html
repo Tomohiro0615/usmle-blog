@@ -96,5 +96,144 @@
             post.path = `posts/${f.name}`;
             posts.push(post);
           } catch (e) {
-            diag.textContent = `診断: ${f.name} の取得/解析でエラー: ${e.message}\n` + diag.te
+            diag.textContent = `診断: ${f.name} の取得/解析でエラー: ${e.message}\n` + diag.textContent;
+          }
+        }
+        // 日付降順
+        posts.sort((a, b) => new Date(b.date) - new Date(a.date));
+        allPosts = posts;
+        initTags();
+        renderPosts();
+        diag.textContent = '診断: 描画完了\n' + diag.textContent;
+      }
 
+      function initTags() {
+        const set = new Set();
+        allPosts.forEach(p => {
+          if (p.draft === true) return;
+          if (Array.isArray(p.tags)) p.tags.forEach(t => set.add(t));
+          else if (p.tags) set.add(p.tags);
+        });
+        const tagListDiv = document.getElementById('tagList');
+        tagListDiv.innerHTML = '';
+        set.forEach(tag => {
+          const btn = document.createElement('button');
+          btn.className = 'tag-button';
+          btn.textContent = tag;
+          btn.onclick = () => {
+            const url = new URL(window.location);
+            url.searchParams.set('tag', tag);
+            history.replaceState(null, '', url);
+            currentPage = 1;
+            renderPosts();
+          };
+          tagListDiv.appendChild(btn);
+        });
+      }
+
+      function renderPosts() {
+        const params = new URLSearchParams(window.location.search);
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        const tagFilter = params.get('tag');
+        let posts = allPosts.filter(p => p.draft !== true);
+
+        if (tagFilter) {
+          posts = posts.filter(p => Array.isArray(p.tags) ? p.tags.includes(tagFilter) : p.tags === tagFilter);
+        }
+        if (searchTerm) {
+          posts = posts.filter(p => {
+            const inTitle = p.title && p.title.toLowerCase().includes(searchTerm);
+            const inExcerpt = p.excerpt && p.excerpt.toLowerCase().includes(searchTerm);
+            const inTags = Array.isArray(p.tags) && p.tags.some(t => t.toLowerCase().includes(searchTerm));
+            return inTitle || inExcerpt || inTags;
+          });
+        }
+
+        const totalPages = Math.ceil(posts.length / postsPerPage) || 1;
+        if (currentPage > totalPages) currentPage = 1;
+        const start = (currentPage - 1) * postsPerPage;
+        const end = start + postsPerPage;
+        const display = posts.slice(start, end);
+
+        const container = document.getElementById('postsContainer');
+        container.innerHTML = '';
+
+        display.forEach(post => {
+          const card = document.createElement('article');
+          card.className = 'post-card';
+          if (post.eyecatch) {
+            const img = document.createElement('img');
+            img.className = 'post-eyecatch';
+            img.src = post.eyecatch.startsWith('http') ? post.eyecatch : `/assets/uploads/${post.eyecatch}`;
+            img.alt = post.title || '';
+            card.appendChild(img);
+          }
+          const h2 = document.createElement('h2');
+          const a = document.createElement('a');
+          a.href = `/post_view.html?path=${encodeURIComponent(post.path)}`;
+          a.textContent = post.title || '無題';
+          h2.appendChild(a);
+          card.appendChild(h2);
+
+          if (post.date) {
+            const t = document.createElement('time');
+            t.className = 'post-date';
+            t.dateTime = post.date;
+            try { t.textContent = new Date(post.date).toLocaleDateString('ja-JP'); }
+            catch { t.textContent = post.date; }
+            card.appendChild(t);
+          }
+
+          if (post.excerpt) {
+            const p = document.createElement('p');
+            p.className = 'post-excerpt';
+            p.textContent = post.excerpt;
+            card.appendChild(p);
+          }
+
+          if (post.tags) {
+            const tagsDiv = document.createElement('div');
+            tagsDiv.className = 'post-tags';
+            const tags = Array.isArray(post.tags) ? post.tags : [post.tags];
+            tags.forEach(tag => {
+              const span = document.createElement('span');
+              span.className = 'tag';
+              span.textContent = tag;
+              span.onclick = () => {
+                const url = new URL(window.location);
+                url.searchParams.set('tag', tag);
+                history.replaceState(null, '', url);
+                currentPage = 1;
+                renderPosts();
+              };
+              tagsDiv.appendChild(span);
+            });
+            card.appendChild(tagsDiv);
+          }
+
+          container.appendChild(card);
+        });
+
+        // ページネーション
+        const nav = document.getElementById('pagination');
+        nav.innerHTML = '';
+        for (let i = 1; i <= Math.ceil(posts.length / postsPerPage) || 1; i++) {
+          const btn = document.createElement('button');
+          btn.textContent = i;
+          btn.disabled = i === currentPage;
+          btn.onclick = () => { currentPage = i; renderPosts(); window.scrollTo({top:0,behavior:'smooth'}); };
+          nav.appendChild(btn);
+        }
+      }
+
+      document.getElementById('searchInput').addEventListener('input', () => {
+        currentPage = 1; renderPosts();
+      });
+
+      (async () => {
+        try { await fetchPostsList(); }
+        catch (e) { diag.textContent = `診断: 失敗 ${e.message}`; }
+      })();
+    </script>
+  </body>
+</html>
