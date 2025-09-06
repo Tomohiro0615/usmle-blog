@@ -1,1 +1,22 @@
+/*
+  全ページ共通のセキュリティヘッダやキャッシュ設定。
+*/
+
+# CMS 画面はキャッシュしない
+/admin/*
+  Cache-Control: no-store
+  # CORS を許可（Netlify Identity や Git Gateway へのアクセス用）
+  Access-Control-Allow-Origin: *
+  # フレーム埋め込み制限
+  X-Frame-Options: SAMEORIGIN
+  # MIME タイプの厳格な認証
+  X-Content-Type-Options: nosniff
+  # リファラー情報を同一オリジンのみに送信
+  Referrer-Policy: same-origin
+
+/*
+  # 全ページに適用する追加セキュリティ
+  X-XSS-Protection: 1; mode=block
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  Content-Security-Policy: default-src 'self'; img-src 'self' data: https:; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; connect-src 'self' https://api.github.com https://raw.githubusercontent.com;
 
