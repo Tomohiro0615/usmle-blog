@@ -3,11 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>サイト管理</title>
+  <title>管理画面（ロード診断つき）</title>
   <link rel="stylesheet" href="/assets/styles.css" />
-  <style>body{margin:0}</style>
+  <style>
+    body{margin:0}
+    .wrap{max-width:760px;margin:24px auto;padding:16px}
+    .card{border:1px solid #ccc;border-radius:8px;padding:16px;margin:12px 0}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+    .ok{color:#0a7f00;font-weight:600}
+    .ng{color:#b00020;font-weight:600}
+  </style>
 
-  <!-- 1) CMS設定をページ内に内蔵 -->
+  <!-- CMS 設定はページ内に内蔵（外部 config.yml は使わない） -->
   <script>
     window.CMS_CONFIG = {
       load_config_file: false,
@@ -39,37 +46,81 @@
       }
     };
   </script>
-
-  <!-- 2) Netlify Identity（ログインUIのため“読むだけ”） -->
-  <script src="https://identity.netlify.com/v1/netlify-identity-widget.js" crossorigin="anonymous"></script>
-
-  <!-- 3) Netlify CMS v2（安定版） -->
-  <script src="https://unpkg.com/netlify-cms@2.10.192/dist/netlify-cms.js" crossorigin="anonymous"></script>
-
-  <!-- 4) 起動 -->
-  <script>
-    (function start(){
-      function boot(){
-        if (window.CMS && typeof window.CMS.init === 'function') {
-          window.CMS.registerPreviewStyle('/assets/styles.css');
-          window.CMS.init(window.CMS_CONFIG);
-        } else {
-          setTimeout(boot, 200);
-        }
-      }
-      boot();
-    })();
-  </script>
 </head>
 <body>
-  <header class="container">
+  <div class="wrap">
     <h1>管理画面</h1>
-  </header>
-  <main class="container">
-    <div class="note" style="border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px 0;font-size:14px">
-      ログイン画面が表示されない場合は、Netlify の <b>Identity → Git Gateway</b> を有効化し、<br>
-      招待メールのリンクを <b>Safari（通常タブ）</b> で開いてから、このページを再読み込みしてください。
+    <div class="card mono" id="log">起動中…</div>
+    <div class="card">状態: <span id="st">初期化</span></div>
+    <div class="card">
+      ログインが出ない場合は Netlify の <b>Identity → Git Gateway</b> が <b>Enabled</b> か確認し、
+      招待メールのリンクを <b>Safari（通常タブ）</b>で開いた後にこのページを再読込してください。
     </div>
-  </main>
+  </div>
+
+  <script>
+    const logEl = document.getElementById('log');
+    const stEl  = document.getElementById('st');
+    const log = (m, cls)=>{const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=m; logEl.appendChild(d);};
+    const setSt = (t)=> stEl.textContent=t;
+
+    function loadScript(src,label){
+      return new Promise((res,rej)=>{
+        const s=document.createElement('script');
+        s.src=src; s.crossOrigin='anonymous';
+        s.onload=()=>{ log(`LOAD OK: ${label}`,'ok'); res(); };
+        s.onerror=()=>{ log(`LOAD NG: ${label} (${src})`,'ng'); rej(new Error(label)); };
+        document.head.appendChild(s);
+      });
+    }
+
+    (async () => {
+      log('STEP1: 設定内蔵OK','ok');
+
+      // Identity（ログインUI用）※失敗しても続行
+      try {
+        setSt('Identity読込中…');
+        await loadScript('https://identity.netlify.com/v1/netlify-identity-widget.js','Identity Widget');
+      } catch(e) {
+        log('Identityは読めませんでした（あとでUIが出ない場合はCSPを確認）','ng');
+      }
+
+      // Netlify CMS v2（安定版）を読み込み → 失敗なら jsDelivr にフォールバック
+      try {
+        setSt('CMS本体読込中（unpkg）…');
+        await loadScript('https://unpkg.com/netlify-cms@2.10.192/dist/netlify-cms.js','Netlify CMS v2 (unpkg)');
+      } catch(e) {
+        setSt('CMS本体読込中（jsDelivr）…');
+        await loadScript('https://cdn.jsdelivr.net/npm/netlify-cms@2.10.192/dist/netlify-cms.js','Netlify CMS v2 (jsDelivr)');
+      }
+
+      // 読み込み結果の確認
+      setSt('CMS初期化中…');
+      let tries = 0;
+      const timer = setInterval(()=>{
+        tries++;
+        if (window.CMS && typeof window.CMS.init === 'function') {
+          clearInterval(timer);
+          try {
+            window.CMS.registerPreviewStyle('/assets/styles.css');
+            window.CMS.init(window.CMS_CONFIG);
+            setSt('CMS起動OK（左にUIが表示されます）');
+            log('STEP3: CMS.init() 実行','ok');
+          } catch(e) {
+            setSt('CMS初期化エラー');
+            log('CMS.init エラー: '+(e.stack||e.message),'ng');
+          }
+        } else if (tries>20) {
+          clearInterval(timer);
+          setSt('CMSが見つかりません（CSP/通信を確認）');
+          log('window.CMS 未検出（タイムアウト）','ng');
+        }
+      }, 400);
+    })();
+
+    // 例外を可視化
+    window.addEventListener('error', (e)=> log('window.error: '+e.message,'ng'));
+    window.addEventListener('unhandledrejection', (e)=> log('unhandledrejection: '+(e.reason&&e.reason.message),'ng'));
+  </script>
 </body>
 </html>
