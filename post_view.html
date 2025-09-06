@@ -9,30 +9,53 @@
   </head>
   <body>
     <main id="postContainer"></main>
+    <!-- 診断用（不要になったら消してOK） -->
     <div id="diag" style="padding:8px;border:1px solid #ccc;margin:8px;white-space:pre-wrap;"></div>
+
     <script>
       const REPO_OWNER = 'Tomohiro0615';
       const REPO_NAME  = 'usmle-blog';
       const BRANCH = 'main';
       const diag = document.getElementById('diag');
 
+      /* Base64 → UTF-8（堅牢版） */
+      function base64ToUtf8String(b64) {
+        const binary = atob((b64 || '').replace(/\n/g, ''));
+        if (window.TextDecoder) {
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          try { return new TextDecoder('utf-8', { fatal: false }).decode(bytes); } catch {}
+        }
+        try { return decodeURIComponent(escape(binary)); } catch { return binary; }
+      }
+
+      async function githubGetFileUtf8(path) {
+        path = path.replace(/^\/+/, '');
+        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}?ref=${BRANCH}`;
+        const r = await fetch(url);
+        const text = await r.text();
+        if (!r.ok) throw new Error(`Get file NG ${r.status}: ${text}`);
+        const data = JSON.parse(text);
+        return base64ToUtf8String(data.content);
+      }
+
       function parseYAML(yaml) {
-        const lines = yaml.split('\n');
+        const lines = (yaml || '').split('\n');
         const obj = {};
         for (const line of lines) {
+          if (!line || !line.includes(':')) continue;
           const idx = line.indexOf(':');
-          if (idx > -1) {
-            const key = line.slice(0, idx).trim();
-            let value = line.slice(idx + 1).trim();
-            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-              value = value.slice(1, -1);
-            }
-            if (/^\d{4}-\d{2}-\d{2}/.test(value)) obj[key] = value;
-            else if (value === 'true' || value === 'false') obj[key] = value === 'true';
-            else if (value.startsWith('[') && value.endsWith(']')) {
-              obj[key] = value.slice(1, -1).split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
-            } else obj[key] = value;
+          const key = line.slice(0, idx).trim();
+          let value = line.slice(idx + 1).trim();
+          if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1);
           }
+          if (/^\d{4}-\d{2}-\d{2}/.test(value)) obj[key] = value;
+          else if (value === 'true' || value === 'false') obj[key] = (value === 'true');
+          else if (value.startsWith('[') && value.endsWith(']')) {
+            obj[key] = value.slice(1, -1).split(',')
+              .map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+          } else obj[key] = value;
         }
         return obj;
       }
@@ -41,7 +64,7 @@
         const fmRegex = /^---\n([\s\S]*?)\n---\n?/;
         const match = content.match(fmRegex);
         let metadata = {};
-        let body = content;
+        let body = content || '';
         if (match) {
           const yaml = match[1];
           body = content.slice(match[0].length);
@@ -78,16 +101,6 @@
         }
       }
 
-      async function githubGetFileBase64(path) {
-        path = path.replace(/^\/+/, ''); // 先頭の / を除去（/posts/... → posts/...）
-        const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}?ref=${BRANCH}`;
-        const r = await fetch(url);
-        const text = await r.text();
-        if (!r.ok) throw new Error(`Get file NG ${r.status}: ${text}`);
-        const data = JSON.parse(text);
-        return atob((data.content || '').replace(/\n/g, ''));
-      }
-
       async function loadPost() {
         const params = new URLSearchParams(window.location.search);
         let path = params.get('path');
@@ -98,7 +111,7 @@
         }
         try {
           diag.textContent = `診断: 取得開始 path=${path}`;
-          const raw = await githubGetFileBase64(path);
+          const raw = await githubGetFileUtf8(path);
           const post = parseFrontMatter(raw);
           container.innerHTML = '';
           if (post.title) document.title = post.title;
@@ -123,6 +136,7 @@
             img.className = 'post-eyecatch';
             img.src = post.eyecatch.startsWith('http') ? post.eyecatch : `/assets/uploads/${post.eyecatch}`;
             img.alt = post.title || '';
+            img.onerror = () => img.remove();
             container.appendChild(img);
           }
 
