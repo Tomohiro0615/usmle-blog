@@ -1,69 +1,120 @@
 <!DOCTYPE html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>サイト管理</title>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>サイト管理（デバッグ表示つき）</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <style>
+    body{margin:0;padding:0}
+    .wrap{max-width:760px;margin:24px auto;padding:16px}
+    .card{border:1px solid #ccc;border-radius:8px;padding:16px;margin:12px 0}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+    .ok{color:#0a7f00;font-weight:600}
+    .ng{color:#b00020;font-weight:600}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>管理画面</h1>
+    <div class="card mono" id="log">起動中…</div>
+    <div class="card"><strong>状態:</strong> <span id="status">初期化</span></div>
+  </div>
 
-    <!-- 1) まず CMS の設定を「グローバル変数」に内蔵（Decap が自動で拾います） -->
-    <script>
-      window.CMS_CONFIG = {
-        load_config_file: false,
-        config: {
-          backend: { name: 'git-gateway', branch: 'main' },
-          media_folder: 'assets/uploads',
-          public_folder: '/assets/uploads',
-          locale: 'ja',
-          publish_mode: 'editorial_workflow',
-          site_url: 'https://usmle-japan-blog.netlify.app',
-          display_url: 'https://usmle-japan-blog.netlify.app',
-          collections: [
-            {
-              name: 'posts',
-              label: '投稿',
-              label_singular: '投稿',
-              folder: 'posts',
-              create: true,
-              extension: 'md',
-              slug: '{{year}}{{month}}{{day}}-{{slug}}',
-              sort: 'date:desc',
-              preview_path: 'post_view.html?path=/posts/{{filename}}',
-              fields: [
-                { label: 'タイトル', name: 'title', widget: 'string', required: true },
-                { label: '日付', name: 'date', widget: 'datetime', format: 'YYYY-MM-DD', time_format: false, required: true },
-                { label: '抜粋（一覧に表示）', name: 'excerpt', widget: 'text', required: false },
-                { label: 'タグ', name: 'tags', widget: 'list', required: false },
-                { label: 'アイキャッチ画像', name: 'eyecatch', widget: 'image', required: false, allow_multiple: false },
-                { label: '下書き', name: 'draft', widget: 'boolean', default: false, required: false },
-                { label: '本文（Markdown）', name: 'body', widget: 'markdown', required: false }
-              ],
-            },
-          ],
+  <script>
+    const logEl = document.getElementById('log');
+    const stEl  = document.getElementById('status');
+    const log = (m, cls) => {
+      const line = document.createElement('div');
+      if (cls) line.className = cls;
+      line.textContent = m;
+      logEl.appendChild(line);
+    };
+    const setStatus = (t) => stEl.textContent = t;
+
+    // 1) CMS 設定をグローバルに（外部config不使用）
+    window.CMS_CONFIG = {
+      load_config_file: false,
+      config: {
+        backend: { name: 'git-gateway', branch: 'main' },
+        media_folder: 'assets/uploads',
+        public_folder: '/assets/uploads',
+        locale: 'ja',
+        publish_mode: 'editorial_workflow',
+        site_url: 'https://usmle-japan-blog.netlify.app',
+        display_url: 'https://usmle-japan-blog.netlify.app',
+        collections: [
+          {
+            name: 'posts', label: '投稿', label_singular: '投稿',
+            folder: 'posts', create: true, extension: 'md',
+            slug: '{{year}}{{month}}{{day}}-{{slug}}', sort: 'date:desc',
+            preview_path: 'post_view.html?path=/posts/{{filename}}',
+            fields: [
+              { label:'タイトル', name:'title', widget:'string', required:true },
+              { label:'日付', name:'date', widget:'datetime', format:'YYYY-MM-DD', time_format:false, required:true },
+              { label:'抜粋（一覧に表示）', name:'excerpt', widget:'text' },
+              { label:'タグ', name:'tags', widget:'list' },
+              { label:'アイキャッチ画像', name:'eyecatch', widget:'image', allow_multiple:false },
+              { label:'下書き', name:'draft', widget:'boolean', default:false },
+              { label:'本文（Markdown）', name:'body', widget:'markdown' }
+            ]
+          }
+        ]
+      }
+    };
+    log('STEP1: CMS_CONFIG 設定OK', 'ok');
+
+    // 2) スクリプトを順次読み込み＆結果を表示
+    function loadScript(src, label){
+      return new Promise((resolve,reject)=>{
+        const s=document.createElement('script');
+        s.src = src;
+        s.onload = ()=>{ log(`LOAD OK: ${label}`, 'ok'); resolve(); };
+        s.onerror = ()=>{ log(`LOAD NG: ${label} (${src})`, 'ng'); reject(new Error(label)); };
+        document.head.appendChild(s);
+      });
+    }
+
+    (async () => {
+      try {
+        setStatus('Identity読込中…');
+        await loadScript('https://identity.netlify.com/v1/netlify-identity-widget.js', 'Identity Widget');
+        setStatus('CMS本体読込中(unpkg)…');
+        await loadScript('https://unpkg.com/decap-cms@^3/dist/decap-cms.js', 'Decap CMS (unpkg)');
+      } catch(e) {
+        log('unpkgが失敗 → jsDelivrへフェイルオーバー', 'ng');
+        setStatus('CMS本体読込中(jsDelivr)…');
+        try {
+          await loadScript('https://cdn.jsdelivr.net/npm/decap-cms@3/dist/decap-cms.js', 'Decap CMS (jsDelivr)');
+        } catch(e2) {
+          setStatus('CMS本体の読み込みに失敗');
+          log('致命的: CMS本体が読めません。CSPかネットワークを確認してください。','ng');
+          return;
         }
-      };
-    </script>
+      }
 
-    <!-- 2) Netlify Identity（ログインUI用。イベントハンドラは付けません＝リロードしません） -->
-    <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
-
-    <!-- 3) Decap CMS 本体（どちらか読めればOK） -->
-    <script src="https://unpkg.com/decap-cms@^3/dist/decap-cms.js"></script>
-    <script>
-      // 予備CDN（unpkgがブロックされた時の保険）
-      setTimeout(() => {
-        if (!window.CMS) {
-          var s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/decap-cms@3/dist/decap-cms.js';
-          document.head.appendChild(s);
+      // 3) CMS がロードされたか確認して起動
+      setStatus('CMS初期化中…');
+      let tries = 0;
+      const timer = setInterval(()=>{
+        tries++;
+        if (window.CMS && CMS.init) {
+          clearInterval(timer);
+          try{
+            CMS.init(window.CMS_CONFIG);
+            setStatus('CMS起動OK（左側にUIが出ます）');
+            log('STEP3: CMS.init() 実行', 'ok');
+          }catch(e){
+            setStatus('CMS初期化エラー');
+            log('CMS.init エラー: ' + (e.stack||e.message), 'ng');
+          }
+        } else if (tries > 20) {
+          clearInterval(timer);
+          setStatus('CMSが見つかりません（CSP/通信を確認）');
+          log('CMSオブジェクト未検出（タイムアウト）', 'ng');
         }
-      }, 1000);
-    </script>
-
-    <!-- プレビューにサイトのCSSを適用（なくてもOK） -->
-    <link rel="stylesheet" href="/assets/styles.css" />
-    <style>body{margin:0}</style>
-  </head>
-  <body>
-    <noscript>JavaScript を有効にしてください。</noscript>
-  </body>
+      }, 500);
+    })();
+  </script>
+</body>
 </html>
