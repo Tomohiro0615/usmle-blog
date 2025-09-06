@@ -40,10 +40,6 @@
 </main>
 
 <script>
-const OWNER = 'Tomohiro0615';
-const REPO  = 'usmle-blog';
-const BRANCH = 'main';
-
 const listEl = document.getElementById('list');
 const statusEl = document.getElementById('status');
 const qEl = document.getElementById('q');
@@ -52,16 +48,10 @@ const tagsEl = document.getElementById('tags');
 let allPosts = [];
 let currentTag = null;
 
-function showErr(msg){
-  statusEl.style.display = 'block';
-  statusEl.textContent = msg;
-}
-
-async function j(url){ const r = await fetch(url, {cache:'no-store'}); if(!r.ok) throw new Error(`${r.status} ${url}`); return r.json(); }
-async function t(url){ const r = await fetch(url, {cache:'no-store'}); if(!r.ok) throw new Error(`${r.status} ${url}`); return r.text(); }
+function showErr(msg){ statusEl.style.display='block'; statusEl.textContent=msg; }
+async function t(url){ const r=await fetch(url,{cache:'no-store'}); if(!r.ok) throw new Error(`${r.status} ${url}`); return r.text(); }
 
 function parseFrontMatter(mdRaw){
-  // UTF-8 BOM除去
   const md = mdRaw.replace(/^\uFEFF/, '');
   const m = md.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if(!m) return { data:{}, body: md };
@@ -86,24 +76,17 @@ function parseFrontMatter(mdRaw){
 }
 
 function render(){
-  // フィルタ（ドラフト非表示）
-  let posts = allPosts.filter(p => !p.data.draft);
-  if (currentTag) posts = posts.filter(p => (p.data.tags||[]).includes(currentTag));
+  let posts = allPosts.filter(p=>!p.data.draft);
+  if(currentTag) posts = posts.filter(p=>(p.data.tags||[]).includes(currentTag));
   const q = (qEl.value||'').trim().toLowerCase();
-  if (q) {
+  if(q){
     posts = posts.filter(p=>{
       const hay = `${p.data.title||''} ${p.data.excerpt||''} ${(p.data.tags||[]).join(' ')}`.toLowerCase();
       return hay.includes(q);
     });
   }
-  // 日付降順
   posts.sort((a,b)=> (b.data.date||'').localeCompare(a.data.date||''));
-
-  // 描画
-  if (!posts.length) {
-    listEl.innerHTML = '<p>表示できる記事がありません（下書きのみ もしくは 取得失敗）。</p>';
-    return;
-  }
+  if(!posts.length){ listEl.innerHTML='<p>表示できる記事がありません。</p>'; return; }
   listEl.innerHTML = posts.map(p=>`
     <article class="card">
       <div class="meta">${p.data.date||''} ${(p.data.tags||[]).map(x=>`<span class="tag">${x}</span>`).join('')}</div>
@@ -111,42 +94,26 @@ function render(){
       <p>${p.data.excerpt||''}</p>
     </article>
   `).join('');
-
-  // タグ一覧（初回のみ）
-  if (!tagsEl.dataset.ready) {
-    const set = new Set();
-    posts.forEach(p => (p.data.tags||[]).forEach(t => set.add(t)));
-    tagsEl.innerHTML = ['すべて', ...Array.from(set)].map(t=>{
-      const tag = t === 'すべて' ? '' : t;
-      return `<button class="tag" data-tag="${tag}">${t}</button>`;
-    }).join('');
-    tagsEl.dataset.ready = '1';
-  }
 }
 
 async function load(){
   try{
-    // 1) posts ディレクトリの一覧
-    const list = await j(`https://api.github.com/repos/${OWNER}/${REPO}/contents/posts?ref=${BRANCH}`);
-    const files = list.filter(x => x.type==='file' && x.name.endsWith('.md'));
-    if (!files.length) { showErr('posts フォルダに .md が見つかりません'); return; }
-
-    // 2) 各 .md を取得 → フロントマター解析
+    const names = JSON.parse(await t('/posts/_list.json'));
+    if(!Array.isArray(names) || names.length===0){ showErr('posts/_list.json が空です'); return; }
     const result = [];
-    for (const f of files) {
-      const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/posts/${encodeURIComponent(f.name)}`;
-      try {
-        const md = await t(rawUrl);
+    for(const name of names){
+      try{
+        const md = await t(`/posts/${encodeURIComponent(name)}`);
         const {data, body} = parseFrontMatter(md);
-        result.push({ name: f.name, data, body });
-      } catch (e) {
-        console.warn('fetch md failed:', f.name, e);
+        result.push({ name, data, body });
+      }catch(e){
+        console.warn('fetch md failed:', name, e);
       }
     }
     allPosts = result;
     render();
-  } catch (e) {
-    showErr('記事一覧の取得に失敗しました。CSP/_headers またはファイル名/ブランチ設定を確認してください。');
+  }catch(e){
+    showErr('記事リスト（/posts/_list.json）の取得に失敗しました。ファイルの有無を確認してください。');
     console.error(e);
   }
 }
