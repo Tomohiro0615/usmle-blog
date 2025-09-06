@@ -14,12 +14,11 @@
   .tag{display:inline-block;padding:2px 8px;border:1px solid #cbd5e1;border-radius:999px;font-size:12px;margin-right:6px}
   .card{border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin:12px 0}
   .meta{font-size:12px;color:#6b7280;margin-bottom:6px}
-  .pager{display:flex;gap:8px;justify-content:center;margin:20px 0}
-  .pager button{padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff}
+  .err{background:#fff3f3;border:1px solid #f3c2c2;color:#b10707;padding:10px;border-radius:8px;margin:12px 0}
   @media (prefers-color-scheme: dark){
     :root{--bg:#0b0f14;--fg:#e5e7eb}
     header, .card{border-color:#1f2937}
-    input[type="search"], .pager button{background:#0b0f14;color:#e5e7eb;border-color:#374151}
+    input[type="search"]{background:#0b0f14;color:#e5e7eb;border-color:#374151}
   }
 </style>
 </head>
@@ -36,129 +35,130 @@
 </header>
 
 <main>
+  <div id="status" class="err" style="display:none"></div>
   <div id="list"></div>
-  <div class="pager">
-    <button id="prev">前へ</button>
-    <div id="pageInfo" aria-live="polite"></div>
-    <button id="next">次へ</button>
-  </div>
 </main>
 
 <script>
 const OWNER = 'Tomohiro0615';
 const REPO  = 'usmle-blog';
 const BRANCH = 'main';
-const PER_PAGE = 10;
 
 const listEl = document.getElementById('list');
-const tagsEl = document.getElementById('tags');
+const statusEl = document.getElementById('status');
 const qEl = document.getElementById('q');
-const prevBtn = document.getElementById('prev');
-const nextBtn = document.getElementById('next');
-const pageInfo = document.getElementById('pageInfo');
+const tagsEl = document.getElementById('tags');
 
 let allPosts = [];
 let currentTag = null;
-let currentPage = 1;
 
-async function fetchJSON(url){ const r = await fetch(url); if(!r.ok) throw new Error(url); return r.json(); }
-async function fetchText(url){ const r = await fetch(url); if(!r.ok) throw new Error(url); return r.text(); }
+function showErr(msg){
+  statusEl.style.display = 'block';
+  statusEl.textContent = msg;
+}
 
-function parseFrontMatter(md){
-  const m = md.match(/^---\n([\s\S]*?)\n---\n?/);
+async function j(url){ const r = await fetch(url, {cache:'no-store'}); if(!r.ok) throw new Error(`${r.status} ${url}`); return r.json(); }
+async function t(url){ const r = await fetch(url, {cache:'no-store'}); if(!r.ok) throw new Error(`${r.status} ${url}`); return r.text(); }
+
+function parseFrontMatter(mdRaw){
+  // UTF-8 BOM除去
+  const md = mdRaw.replace(/^\uFEFF/, '');
+  const m = md.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if(!m) return { data:{}, body: md };
   const yaml = m[1];
   const body = md.slice(m[0].length);
   const data = {};
   yaml.split(/\r?\n/).forEach(line=>{
-    const mm = line.match(/^(\w+):\s*(.*)$/);
-    if(mm){ 
-      const k = mm[1].trim();
-      let v = mm[2].trim();
-      if(v === 'true') v = true;
-      else if(v === 'false') v = false;
-      else if(v.startsWith('[') && v.endsWith(']')){
-        try { v = JSON.parse(v.replace(/([^\s"',\[\]]+)/g,'"$1"')); } catch(e){}
-      } else {
-        v = v.replace(/^"(.*)"$/,'$1');
-      }
-      data[k]=v;
+    const mm = line.match(/^([A-Za-z0-9_]+):\s*(.*)$/);
+    if(!mm) return;
+    const k = mm[1].trim();
+    let v = mm[2].trim();
+    if (v === 'true') v = true;
+    else if (v === 'false') v = false;
+    else if (v.startsWith('[') && v.endsWith(']')) {
+      try { v = JSON.parse(v.replace(/([^\s"',\[\]]+)/g,'"$1"')); } catch(e){}
+    } else {
+      v = v.replace(/^"(.*)"$/,'$1');
     }
+    data[k] = v;
   });
   return { data, body };
 }
 
 function render(){
-  let posts = allPosts.filter(p=>!p.data.draft);
-  if(currentTag) posts = posts.filter(p=>(p.data.tags||[]).includes(currentTag));
-  const q = qEl.value.trim().toLowerCase();
-  if(q) posts = posts.filter(p=>{
-    const hay = (p.data.title||'')+' '+(p.data.excerpt||'')+' '+(p.data.tags||[]).join(' ');
-    return hay.toLowerCase().includes(q);
-  });
+  // フィルタ（ドラフト非表示）
+  let posts = allPosts.filter(p => !p.data.draft);
+  if (currentTag) posts = posts.filter(p => (p.data.tags||[]).includes(currentTag));
+  const q = (qEl.value||'').trim().toLowerCase();
+  if (q) {
+    posts = posts.filter(p=>{
+      const hay = `${p.data.title||''} ${p.data.excerpt||''} ${(p.data.tags||[]).join(' ')}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }
+  // 日付降順
   posts.sort((a,b)=> (b.data.date||'').localeCompare(a.data.date||''));
 
-  const totalPages = Math.max(1, Math.ceil(posts.length / PER_PAGE));
-  currentPage = Math.min(currentPage, totalPages);
-  const start = (currentPage-1)*PER_PAGE;
-  const pageItems = posts.slice(start, start+PER_PAGE);
-
-  listEl.innerHTML = pageItems.map(p=>`
+  // 描画
+  if (!posts.length) {
+    listEl.innerHTML = '<p>表示できる記事がありません（下書きのみ もしくは 取得失敗）。</p>';
+    return;
+  }
+  listEl.innerHTML = posts.map(p=>`
     <article class="card">
-      <div class="meta">${p.data.date||''} ${ (p.data.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('') }</div>
+      <div class="meta">${p.data.date||''} ${(p.data.tags||[]).map(x=>`<span class="tag">${x}</span>`).join('')}</div>
       <h2 style="margin:.2em 0;"><a href="/post_view.html?path=/posts/${encodeURIComponent(p.name)}">${p.data.title||p.name}</a></h2>
       <p>${p.data.excerpt||''}</p>
     </article>
-  `).join('') || '<p>記事がありません。</p>';
+  `).join('');
 
-  pageInfo.textContent = `${currentPage} / ${totalPages}`;
-  prevBtn.disabled = currentPage<=1;
-  nextBtn.disabled = currentPage>=totalPages;
-
-  // タグ一覧（初回のみ作成）
-  if(!tagsEl.dataset.ready){
-    const tagSet = new Set();
-    allPosts.forEach(p=> (p.data.tags||[]).forEach(t=> tagSet.add(t)));
-    tagsEl.innerHTML = ['すべて', ...Array.from(tagSet)].map(t=>{
-      const active = (t===currentTag) || (!currentTag && t==='すべて');
-      return `<button class="tag" data-tag="${t==='すべて'?'':t}" style="${active?'background:#eef':''}">${t}</button>`;
+  // タグ一覧（初回のみ）
+  if (!tagsEl.dataset.ready) {
+    const set = new Set();
+    posts.forEach(p => (p.data.tags||[]).forEach(t => set.add(t)));
+    tagsEl.innerHTML = ['すべて', ...Array.from(set)].map(t=>{
+      const tag = t === 'すべて' ? '' : t;
+      return `<button class="tag" data-tag="${tag}">${t}</button>`;
     }).join('');
     tagsEl.dataset.ready = '1';
   }
 }
 
 async function load(){
-  // postsフォルダの一覧をGitHub APIから取得
-  const list = await fetchJSON(`https://api.github.com/repos/${OWNER}/${REPO}/contents/posts?ref=${BRANCH}`);
-  const mdFiles = list.filter(x=>x.type==='file' && x.name.endsWith('.md'));
-  // 各mdをrawで取得→フロントマター解析
-  const posts = [];
-  for(const f of mdFiles){
-    const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/posts/${encodeURIComponent(f.name)}`;
-    try{
-      const md = await fetchText(rawUrl);
-      const fm = parseFrontMatter(md);
-      posts.push({ name:f.name, data:fm.data, body:fm.body });
-    }catch(e){ /* skip */ }
+  try{
+    // 1) posts ディレクトリの一覧
+    const list = await j(`https://api.github.com/repos/${OWNER}/${REPO}/contents/posts?ref=${BRANCH}`);
+    const files = list.filter(x => x.type==='file' && x.name.endsWith('.md'));
+    if (!files.length) { showErr('posts フォルダに .md が見つかりません'); return; }
+
+    // 2) 各 .md を取得 → フロントマター解析
+    const result = [];
+    for (const f of files) {
+      const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/posts/${encodeURIComponent(f.name)}`;
+      try {
+        const md = await t(rawUrl);
+        const {data, body} = parseFrontMatter(md);
+        result.push({ name: f.name, data, body });
+      } catch (e) {
+        console.warn('fetch md failed:', f.name, e);
+      }
+    }
+    allPosts = result;
+    render();
+  } catch (e) {
+    showErr('記事一覧の取得に失敗しました。CSP/_headers またはファイル名/ブランチ設定を確認してください。');
+    console.error(e);
   }
-  allPosts = posts;
-  render();
 }
 
-qEl.addEventListener('input', ()=>{ currentPage=1; render(); });
-prevBtn.addEventListener('click', ()=>{ currentPage--; render(); });
-nextBtn.addEventListener('click', ()=>{ currentPage++; render(); });
-tagsEl.addEventListener('click', (e)=>{
+qEl.addEventListener('input', ()=>render());
+tagsEl.addEventListener('click', e=>{
   const t = e.target.closest('[data-tag]'); if(!t) return;
   currentTag = t.dataset.tag || null;
-  tagsEl.dataset.ready=''; // 再描画でactive更新
-  currentPage=1; render();
+  render();
 });
 
-load().catch(err=>{
-  listEl.innerHTML = `<p>記事の読み込みでエラーが発生しました。</p>`;
-  console.error(err);
-});
+load();
 </script>
 </body>
 </html>
