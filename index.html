@@ -14,12 +14,15 @@
         <input type="text" id="searchInput" placeholder="キーワード検索" />
         <div id="tagList"></div>
       </section>
+      <!-- 診断用（トラブル時の状況表示。落ち着いたら消してOK） -->
       <div id="diag" style="padding:8px;border:1px solid #ccc;margin:8px;white-space:pre-wrap;"></div>
+
       <section id="postsContainer"></section>
       <nav id="pagination"></nav>
     </main>
+
     <script>
-      // あなたのリポジトリ
+      /* あなたのリポジトリ情報 */
       const REPO_OWNER = 'Tomohiro0615';
       const REPO_NAME  = 'usmle-blog';
       const BRANCH = 'main';
@@ -29,39 +32,15 @@
       let currentPage = 1;
       const diag = document.getElementById('diag');
 
-      // YAML簡易パーサ
-      function parseYAML(yaml) {
-        const lines = yaml.split('\n');
-        const obj = {};
-        for (const line of lines) {
-          const idx = line.indexOf(':');
-          if (idx > -1) {
-            const key = line.slice(0, idx).trim();
-            let value = line.slice(idx + 1).trim();
-            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-              value = value.slice(1, -1);
-            }
-            if (/^\d{4}-\d{2}-\d{2}/.test(value)) obj[key] = value;
-            else if (value === 'true' || value === 'false') obj[key] = value === 'true';
-            else if (value.startsWith('[') && value.endsWith(']')) {
-              obj[key] = value.slice(1, -1).split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
-            } else obj[key] = value;
-          }
+      /* --------- GitHub API helpers --------- */
+      function base64ToUtf8String(b64) {
+        const binary = atob((b64 || '').replace(/\n/g, ''));
+        if (window.TextDecoder) {
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          try { return new TextDecoder('utf-8', { fatal: false }).decode(bytes); } catch {}
         }
-        return obj;
-      }
-
-      function parseFrontMatter(content) {
-        const fmRegex = /^---\n([\s\S]*?)\n---\n?/;
-        const match = content.match(fmRegex);
-        let metadata = {};
-        let body = content;
-        if (match) {
-          const yaml = match[1];
-          body = content.slice(match[0].length);
-          metadata = parseYAML(yaml);
-        }
-        return { ...metadata, body };
+        try { return decodeURIComponent(escape(binary)); } catch { return binary; }
       }
 
       async function githubListPosts() {
@@ -72,39 +51,79 @@
         return JSON.parse(text).filter(f => f.type === 'file' && f.name.endsWith('.md'));
       }
 
-      async function githubGetFileBase64(path) {
-        // path は "posts/xxx.md" を想定（先頭の "/" は取り除く）
+      async function githubGetFileUtf8(path) {
         path = path.replace(/^\/+/, '');
         const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}?ref=${BRANCH}`;
         const r = await fetch(url);
         const text = await r.text();
         if (!r.ok) throw new Error(`Get file NG ${r.status}: ${text}`);
         const data = JSON.parse(text);
-        // content は base64 + 改行あり
-        return atob((data.content || '').replace(/\n/g, ''));
+        return base64ToUtf8String(data.content);
       }
 
+      /* --------- Front matter parser --------- */
+      function parseYAML(yaml) {
+        const lines = (yaml || '').split('\n');
+        const obj = {};
+        for (const line of lines) {
+          if (!line || !line.includes(':')) continue;
+          const idx = line.indexOf(':');
+          const key = line.slice(0, idx).trim();
+          let value = line.slice(idx + 1).trim();
+          if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1);
+          }
+          if (/^\d{4}-\d{2}-\d{2}/.test(value)) obj[key] = value;
+          else if (value === 'true' || value === 'false') obj[key] = (value === 'true');
+          else if (value.startsWith('[') && value.endsWith(']')) {
+            obj[key] = value.slice(1, -1).split(',')
+              .map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+          } else obj[key] = value;
+        }
+        return obj;
+      }
+
+      function parseFrontMatter(content) {
+        const fmRegex = /^---\n([\s\S]*?)\n---\n?/;
+        const match = content.match(fmRegex);
+        let metadata = {};
+        let body = content || '';
+        if (match) {
+          const yaml = match[1];
+          body = content.slice(match[0].length);
+          metadata = parseYAML(yaml);
+        }
+        return { ...metadata, body };
+      }
+
+      /* --------- Fetch & render --------- */
       async function fetchPostsList() {
         diag.textContent = '診断: posts一覧取得中...';
         const files = await githubListPosts();
         diag.textContent = `診断: posts一覧取得OK（${files.length}件）\n` + diag.textContent;
+
         const posts = [];
         for (const f of files) {
           try {
-            const raw = await githubGetFileBase64(`posts/${f.name}`);
+            const raw = await githubGetFileUtf8(`posts/${f.name}`);
             const post = parseFrontMatter(raw);
             post.path = `posts/${f.name}`;
+            if (!post.title) post.title = f.name.replace(/\.md$/, '');
+            if (post.draft === undefined) post.draft = false;
             posts.push(post);
           } catch (e) {
-            diag.textContent = `診断: ${f.name} の取得/解析でエラー: ${e.message}\n` + diag.textContent;
+            diag.textContent = `診断: ${f.name} の取得/解析エラー: ${e.message}\n` + diag.textContent;
           }
         }
-        // 日付降順
-        posts.sort((a, b) => new Date(b.date) - new Date(a.date));
+        posts.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
         allPosts = posts;
-        initTags();
-        renderPosts();
-        diag.textContent = '診断: 描画完了\n' + diag.textContent;
+        try {
+          initTags();
+          renderPosts();
+          diag.textContent = `診断: 描画完了（表示対象 ${allPosts.filter(p=>!p.draft).length}件）\n` + diag.textContent;
+        } catch (e) {
+          diag.textContent = `診断: 描画中エラー: ${e.message}\n` + diag.textContent;
+        }
       }
 
       function initTags() {
@@ -133,41 +152,40 @@
 
       function renderPosts() {
         const params = new URLSearchParams(window.location.search);
-        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        const searchTerm = (document.getElementById('searchInput').value || '').toLowerCase();
         const tagFilter = params.get('tag');
-        let posts = allPosts.filter(p => p.draft !== true);
 
-        if (tagFilter) {
-          posts = posts.filter(p => Array.isArray(p.tags) ? p.tags.includes(tagFilter) : p.tags === tagFilter);
-        }
+        let posts = allPosts.filter(p => p && p.draft !== true);
+        if (tagFilter) posts = posts.filter(p => (Array.isArray(p.tags) ? p.tags.includes(tagFilter) : p.tags === tagFilter));
         if (searchTerm) {
           posts = posts.filter(p => {
-            const inTitle = p.title && p.title.toLowerCase().includes(searchTerm);
-            const inExcerpt = p.excerpt && p.excerpt.toLowerCase().includes(searchTerm);
-            const inTags = Array.isArray(p.tags) && p.tags.some(t => t.toLowerCase().includes(searchTerm));
+            const inTitle = (p.title || '').toLowerCase().includes(searchTerm);
+            const inExcerpt = (p.excerpt || '').toLowerCase().includes(searchTerm);
+            const inTags = Array.isArray(p.tags) && p.tags.some(t => (t||'').toLowerCase().includes(searchTerm));
             return inTitle || inExcerpt || inTags;
           });
         }
 
+        const container = document.getElementById('postsContainer');
+        container.innerHTML = '';
         const totalPages = Math.ceil(posts.length / postsPerPage) || 1;
         if (currentPage > totalPages) currentPage = 1;
         const start = (currentPage - 1) * postsPerPage;
-        const end = start + postsPerPage;
-        const display = posts.slice(start, end);
-
-        const container = document.getElementById('postsContainer');
-        container.innerHTML = '';
+        const display = posts.slice(start, start + postsPerPage);
 
         display.forEach(post => {
           const card = document.createElement('article');
           card.className = 'post-card';
+
           if (post.eyecatch) {
             const img = document.createElement('img');
             img.className = 'post-eyecatch';
             img.src = post.eyecatch.startsWith('http') ? post.eyecatch : `/assets/uploads/${post.eyecatch}`;
             img.alt = post.title || '';
+            img.onerror = () => img.remove();
             card.appendChild(img);
           }
+
           const h2 = document.createElement('h2');
           const a = document.createElement('a');
           a.href = `/post_view.html?path=${encodeURIComponent(post.path)}`;
@@ -194,8 +212,7 @@
           if (post.tags) {
             const tagsDiv = document.createElement('div');
             tagsDiv.className = 'post-tags';
-            const tags = Array.isArray(post.tags) ? post.tags : [post.tags];
-            tags.forEach(tag => {
+            (Array.isArray(post.tags) ? post.tags : [post.tags]).forEach(tag => {
               const span = document.createElement('span');
               span.className = 'tag';
               span.textContent = tag;
@@ -214,10 +231,9 @@
           container.appendChild(card);
         });
 
-        // ページネーション
         const nav = document.getElementById('pagination');
         nav.innerHTML = '';
-        for (let i = 1; i <= Math.ceil(posts.length / postsPerPage) || 1; i++) {
+        for (let i = 1; i <= totalPages; i++) {
           const btn = document.createElement('button');
           btn.textContent = i;
           btn.disabled = i === currentPage;
