@@ -5,14 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>サイト管理</title>
 
-    <!-- Netlify Identity ウィジェット -->
+    <!-- Netlify Identity ウィジェット（必須） -->
     <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
 
-    <!-- Decap CMS 本体 -->
+    <!-- Decap CMS 本体（CDN1/2どちらか落ちても片方で読む） -->
     <script>window.CMS_MANUAL_INIT = true;</script>
     <script src="https://unpkg.com/decap-cms@^3/dist/decap-cms.js"></script>
+    <script>
+      // 予備：unpkgがブロックされた時のフェイルオーバー
+      setTimeout(() => {
+        if (!window.CMS) {
+          var s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/decap-cms@3/dist/decap-cms.js';
+          document.head.appendChild(s);
+        }
+      }, 1200);
+    </script>
 
-    <!-- フロントのCSSをプレビューに反映 -->
+    <!-- フロントCSS（プレビューにも適用） -->
     <link rel="stylesheet" href="/assets/styles.css" />
     <style>
       .admin-shell { max-width: 720px; margin: 24px auto; padding: 16px; }
@@ -31,7 +41,7 @@
         <p class="muted">招待メールのリンクでうまく行かない場合は、このボタンで手動ログインしてください。</p>
       </div>
       <details class="box">
-        <summary>デバッグ情報（必要なときだけ開いてください）</summary>
+        <summary>デバッグ情報（必要時のみ）</summary>
         <div id="debug"></div>
       </details>
     </div>
@@ -39,10 +49,10 @@
     <script>
       const statusBox = document.getElementById('status');
       const debugBox = document.getElementById('debug');
-      const log = (m) => { debugBox.textContent = (debugBox.textContent ? debugBox.textContent + "\n" : "") + m; };
-      const setStatus = (msg) => { statusBox.textContent = msg; };
+      const setStatus = (msg) => statusBox.textContent = msg;
+      const log = (m) => debugBox.textContent = (debugBox.textContent ? debugBox.textContent + "\n" : "") + m;
 
-      // === 1) Decap CMS 設定を「このページに内蔵」 ===
+      // ===== CMS 設定を内蔵（外部の config.yml は使用しない）=====
       const INLINE_CONFIG = {
         backend: { name: 'git-gateway', branch: 'main' },
         media_folder: 'assets/uploads',
@@ -75,18 +85,31 @@
         ],
       };
 
-      // === 2) CMS 初期化（外部の config.yml を読まない） ===
-      try {
-        CMS.registerPreviewStyle('/assets/styles.css');
-        CMS.init({ load_config_file: false, config: INLINE_CONFIG });
-        setStatus('CMSを起動しました。左側に「投稿」が表示されます。');
-        log('CMS.init(load_config_file:false) 済み');
-      } catch (e) {
-        setStatus('CMS初期化エラー: ' + (e && e.message));
-        log('CMS ERROR: ' + (e && (e.stack || e.message)));
+      // ===== CMSを確実に初期化（CMSロード待ちをリトライ）=====
+      function startCMS(retry = 0) {
+        try {
+          if (!window.CMS || !CMS.init) {
+            if (retry < 20) { // 最大 ~10秒待つ（500ms*20）
+              setStatus('CMS読込待機中… ' + (retry+1));
+              return setTimeout(() => startCMS(retry + 1), 500);
+            } else {
+              setStatus('CMSが読み込めませんでした（ネットワーク/CSPを確認）。');
+              log('CMS not loaded after retries');
+              return;
+            }
+          }
+          CMS.registerPreviewStyle('/assets/styles.css');
+          CMS.init({ load_config_file: false, config: INLINE_CONFIG });
+          setStatus('CMSを起動しました。左側に「投稿」が表示されます。');
+          log('CMS.init() OK');
+        } catch (e) {
+          setStatus('CMS初期化エラー: ' + (e && e.message));
+          log('CMS ERROR: ' + (e && (e.stack || e.message)));
+        }
       }
+      startCMS();
 
-      // === 3) Identity 初期化・ログイン動線 ===
+      // ===== Identity（招待リンク/手動ログインの導線）=====
       if (window.netlifyIdentity) {
         const hash = window.location.hash || '';
         netlifyIdentity.on('init', (user) => {
@@ -97,36 +120,18 @@
           if (!user && hasToken) netlifyIdentity.open('signup');
           log('Identity init: ' + (user ? 'logged-in' : 'logged-out'));
         });
+        netlifyIdentity.on('login',   () => { setStatus('ログイン完了。CMSを再読み込みします…'); log('Identity login');   window.location.replace('/admin/'); });
+        netlifyIdentity.on('signup',  () => { setStatus('サインアップ完了。CMSへ移動します…');     log('Identity signup');  window.location.replace('/admin/'); });
+        netlifyIdentity.on('logout',  () => { setStatus('ログアウトしました。再度ログインしてください。'); log('Identity logout'); });
 
-        netlifyIdentity.on('login', () => {
-          setStatus('ログイン完了。CMSを再読み込みします…');
-          log('Identity login');
-          window.location.replace('/admin/');
-        });
-
-        netlifyIdentity.on('signup', () => {
-          setStatus('サインアップ完了。CMSへ移動します…');
-          log('Identity signup');
-          window.location.replace('/admin/');
-        });
-
-        netlifyIdentity.on('logout', () => {
-          setStatus('ログアウトしました。再度ログインしてください。');
-          log('Identity logout');
-        });
-
-        document.getElementById('open-login').addEventListener('click', () => {
-          netlifyIdentity.open();
-        });
-
-        // Safariでも確実に初期化
+        document.getElementById('open-login').addEventListener('click', () => netlifyIdentity.open());
         try { netlifyIdentity.init(); } catch (e) { log('Identity init error: ' + e.message); }
       } else {
         setStatus('Identity ウィジェットが読み込めません（CSP/ネットワークを確認）。');
         log('Identity widget not found');
       }
 
-      // 例外を画面に出す（デバッグ用・運用後は削除可）
+      // 例外を画面に表示（運用後は削除可）
       window.addEventListener('error', (e) => log('window.error: ' + e.message));
       window.addEventListener('unhandledrejection', (e) => log('unhandledrejection: ' + (e.reason && e.reason.message)));
     </script>
