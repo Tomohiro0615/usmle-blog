@@ -1,151 +1,33 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>USMLE Japan Blog</title>
-<style>
- body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;line-height:1.6}
- header{padding:20px 16px;border-bottom:1px solid #e5e7eb}
- main{max-width:900px;margin:0 auto;padding:16px}
- .card{border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin:12px 0}
- .meta{font-size:12px;color:#6b7280;margin-bottom:6px}
- .tag{display:inline-block;padding:2px 8px;border:1px solid #cbd5e1;border-radius:999px;font-size:12px;margin-right:6px}
- .box{padding:10px;border-radius:8px;margin:12px 0;white-space:pre-wrap}
- .ok{background:#f1fff3;border:1px solid #b8e7c0;color:#0a6d2f}
- .ng{background:#fff3f3;border:1px solid #f3c2c2;color:#b10707}
- a.btn{display:inline-block;padding:8px 12px;border:1px solid #0b63ce;border-radius:8px;color:#0b63ce;text-decoration:none}
- code{background:#f3f4f6;padding:2px 6px;border-radius:6px}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>USMLE Japan Blog</title>
+  <style>
+    body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; line-height:1.7; }
+    .wrap { max-width: 760px; margin: 32px auto; padding: 0 16px; }
+    h1 { font-size: 42px; margin: 0 0 16px; }
+    .admin { margin: 8px 0 24px; }
+    ul { padding-left: 1.2em; }
+    a { color: #2b5bd7; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .note { margin-top: 24px; color: #555; font-size: 14px; }
+  </style>
 </head>
 <body>
-<header>
-  <main>
-    <h1 style="margin:0 0 4px">USMLE Japan Blog</h1>
-    <a class="btn" href="/admin/">管理画面</a>
-  </main>
-</header>
+  <div class="wrap">
+    <h1>USMLE Japan Blog</h1>
 
-<main>
-  <div id="diag" class="box ng" style="display:none"></div>
-  <div id="ok" class="box ok" style="display:none"></div>
-  <div id="list"></div>
+    <p class="admin"><a href="/admin/index.html">管理画面</a></p>
 
-  <h3>手動チェック用リンク</h3>
-  <ul>
-    <li><a href="/posts/_list.json">/posts/_list.json</a></li>
-    <li><a href="/posts/hello.md">/posts/hello.md</a></li>
-  </ul>
+    <h2>手動チェック用リンク</h2>
+    <ul>
+      <li><a href="/posts/step1-2025-04.md">Step1記事（2025年4月）</a></li>
+      <li><a href="/posts/step2-ck-2025-08.md">Step2ck記事（2025年8月）</a></li>
+    </ul>
 
-  <noscript>
-    <div class="box ng">⚠️ このページの表示には JavaScript が必要です（ブラウザでJSを有効に）。</div>
-  </noscript>
-</main>
-
-<script>
-(function(){
-  const diag = document.getElementById('diag');
-  const ok   = document.getElementById('ok');
-  const list = document.getElementById('list');
-  const LIST_URL = '/posts/_list.json';
-
-  function showNg(msg){ diag.style.display='block'; diag.textContent = msg; }
-  function showOk(msg){ ok.style.display='block';   ok.textContent   = msg; }
-
-  async function head(url){
-    try {
-      const r = await fetch(url, { method:'HEAD', cache:'no-store' });
-      return r.ok;
-    } catch(e){ return false; }
-  }
-  async function getText(url){
-    const r = await fetch(url, { cache:'no-store' });
-    if(!r.ok) throw new Error(`${r.status} ${url}`);
-    return r.text();
-  }
-
-  function parseFrontMatter(raw){
-    const md = raw.replace(/^\uFEFF/, '');
-    const m = md.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-    if(!m) return { data:{title:'(no title)', date:'', tags:[], draft:false }, body: md };
-    const yaml = m[1], body = md.slice(m[0].length), data = {};
-    yaml.split(/\r?\n/).forEach(line=>{
-      const mm=line.match(/^([A-Za-z0-9_]+):\s*(.*)$/); if(!mm) return;
-      const k=mm[1].trim(); let v=mm[2].trim();
-      if(v==='true') v=true; else if(v==='false') v=false;
-      else if(/^".*"$/.test(v)) v=v.slice(1,-1);
-      else if(v.startsWith('[')&&v.endsWith(']')){ try{ v=JSON.parse(v.replace(/([^\s"',\[\]]+)/g,'"${1}"')); }catch(e){} }
-      data[k]=v;
-    });
-    return { data, body };
-  }
-
-  (async ()=>{
-    // JSが動いている証拠
-    showOk('✅ JavaScript は実行されています。読み込みを開始…');
-
-    // _list.json 存在チェック
-    if(!await head(LIST_URL)){
-      showNg(`❌ ${LIST_URL} が見つかりません。リポジトリに \nposts/_list.json をコミット＆デプロイしてください。`);
-      return;
-    }
-
-    // 取得→JSON
-    let names;
-    try {
-      names = JSON.parse(await getText(LIST_URL));
-    } catch(e) {
-      showNg(`❌ ${LIST_URL} の読み込み/解析に失敗: ${e.message}\n\n中身の例: ["hello.md"]`);
-      return;
-    }
-    if(!Array.isArray(names) || !names.length){
-      showNg(`❌ ${LIST_URL} に記事ファイル名が入っていません。\n例: ["hello.md"]`);
-      return;
-    }
-
-    // 各記事
-    const posts=[];
-    for(const name of names){
-      const url = `/posts/${encodeURIComponent(name)}`;
-      if(!await head(url)){
-        showNg(`❌ ${url} が存在しません。\nファイル名の大文字小文字や拡張子に注意。`);
-        continue;
-      }
-      try{
-        const md = await getText(url);
-        const {data} = parseFrontMatter(md);
-        posts.push({ name, data });
-      }catch(e){
-        showNg(`❌ 取得失敗: ${url} → ${e.message}`);
-      }
-    }
-
-    if(!posts.length){
-      showNg('❌ 取得できた記事が 0 件でした。');
-      return;
-    }
-
-    // 表示
-    const visible = posts.filter(p=>!p.data.draft);
-    visible.sort((a,b)=> (b.data.date||'').localeCompare(a.data.date||''));
-    list.innerHTML = visible.map(p=>`
-      <article class="card">
-        <div class="meta">${p.data.date||''} ${(p.data.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('')}</div>
-        <h2 style="margin:.2em 0;"><a href="/post_view.html?path=/posts/${encodeURIComponent(p.name)}">${p.data.title||p.name}</a></h2>
-        <p>${p.data.excerpt||''}</p>
-      </article>
-    `).join('');
-
-    if(!visible.length){
-      showNg('⚠️ 記事は取得できましたが、全部 draft:true です。draft:false の記事を用意してください。');
-    } else {
-      showOk(`✅ 記事を ${visible.length} 件表示しました。`);
-    }
-  })().catch(e=>{
-    showNg('致命的エラー: '+ e.message);
-    console.error(e);
-  });
-})();
-</script>
+    <p class="note">※上のリンクは <code>posts/</code> フォルダ内の Markdown ファイルへ直リンクしています。</p>
+  </div>
 </body>
 </html>
